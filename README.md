@@ -6,6 +6,21 @@
 
 <a href="./LICENSE"> <img src="https://img.shields.io/github/license/Elflare/nonebot-plugin-moellmchats.svg" alt="license"> </a> <a href="https://pypi.python.org/pypi/nonebot-plugin-moellmchats"> <img src="https://img.shields.io/pypi/v/nonebot-plugin-moellmchats.svg" alt="pypi"> </a> <img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="python"></div>
 
+- [nonebot-plugin-moellmchats](#nonebot-plugin-moellmchats)
+  - [🚀 核心特性](#-核心特性)
+  - [📦 安装](#-安装)
+  - [⚙️ 配置](#️-配置)
+    - [基础配置](#基础配置-configjson手动维护)
+    - [模型管理](#模型管理-modelsjson手动维护)
+    - [智能调度配置](#智能调度配置-model_configjson指令维护)
+    - [性格设定](#性格设定-temperamentsjson-手动维护)
+    - [用户性格设定](#用户性格设定-user_temperamentsjson-指令维护)
+  - [🎮 使用](#-使用)
+    - [指令表](#指令表)
+    - [效果图](#效果图)
+  - [🔄 处理流程](#-处理流程)
+  - [鸣谢](#鸣谢)
+
 ## 🚀 核心特性
 
 - MoE架构（混合专家模型调度）：
@@ -33,7 +48,7 @@
 
 ## 📦 安装
 
-<details open>
+<details>
 <summary>使用 nb-cli 安装</summary>
 在 nonebot2 项目的根目录下打开命令行, 输入以下指令即可安装
 
@@ -81,6 +96,7 @@
 由于文件较多，所以统一放在 `data/moe_llm_chats/` 目录。**注意json不能有注释，所以复制后记得删除。**
 
 ### 基础配置 `config.json`(手动维护)<br>
+
 📌自动生成，修改后需要重启。Tavily搜索: [获取API Key](https://tavily.com/)。
 
 ```json5
@@ -96,6 +112,7 @@
 ```
 
 ### 模型管理 `models.json`(手动维护)<br>
+
 📌**必填**。其中**url、model、key**必填，其他可省略。只能手动修改，重启生效。
 
 ```json
@@ -119,6 +136,7 @@
 ```
 
 ### 智能调度配置 `model_config.json`(指令维护)<br>
+
 📌 自动生成（默认不开启moe和网络搜索），支持QQ指令实时切换；若手动修改，重启生效。<br>
 **模型名字必须为 `medels.json` 中的键值。**
 
@@ -138,6 +156,7 @@
 ```
 
 ### 性格设定 `temperaments.json` (手动维护)<br>
+
 📌 不用写“你在群组”等设定，系统自动补全 | 修改后需重启生效
 
 ```json
@@ -149,6 +168,7 @@
 ```
 
 ### 用户性格设定 `user_temperaments.json` (指令维护)<br>
+
 📌 自动生成 | QQ指令实时切换个性 | 若手动修改，需重启生效
 
 ```json
@@ -165,14 +185,14 @@
 |         指令         |    权限    | 范围 |     参数      |                      说明                      |
 | :------------------: | :--------: | :--: | :-----------: | :--------------------------------------------: |
 | @Bot或以nickname开头 |     无     | 群聊 |   对话内容    |                    聊天对话                    |
-|       性格切换       |     无     | 群聊 |   性格名称    |        切换性格、切换人格、人格切换均可        |
-|       查看性格       |     无     | 群聊 |      无       |             查看性格、查看人格均可             |
+|       性格切换       |     无     | 群聊 |   性格名称    |    发送`切换性格、切换人格、人格切换` 均可     |
+|       查看性格       |     无     | 群聊 |      无       |         发送 `查看性格、查看人格` 均可         |
 |       查看模型       |     无     | 群聊 |      无       |          查看当前 `model_config` 配置          |
 |          ai          |     无     | 群聊 |   对话内容    | 若已开启和配置，快速调用纯ai助手。如 `ai 你好` |
 |       切换模型       | 超级管理员 | 群聊 |   模型名字    |             不使用moe时指定的模型              |
 |       设置moe        | 超级管理员 | 群聊 | 0、1、开、关  |            是否开启混合专家调度模式            |
 |       切换moe        | 超级管理员 | 群聊 | 难度 模型名字 |     难度为0、1、2，如：`切换moe 0 dpsk-r1`     |
-|       设置联网       | 超级管理员 | 群聊 | 0、1、开、关  |                是否开启网络搜索                |
+|       设置联网       | 超级管理员 | 群聊 | 0、1、开、关  |       是否开启网络搜索，如：`设置联网 0`       |
 
 ### 效果图
 
