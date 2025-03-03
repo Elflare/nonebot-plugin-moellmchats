@@ -4,7 +4,7 @@
 
 ✨ 智能多模型对话插件 | 混合调度·搜索增强·上下文优化·个性定制 ✨
 
-<a href="./LICENSE"> <img src="https://img.shields.io/github/license/yourname/nonebot-plugin-moellmchats.svg" alt="license"> </a> <a href="https://pypi.python.org/pypi/nonebot-plugin-moellmchats"> <img src="https://img.shields.io/pypi/v/nonebot-plugin-moellmchats.svg" alt="pypi"> </a> <img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="python"></div>
+<a href="./LICENSE"> <img src="https://img.shields.io/github/license/Elflare/nonebot-plugin-moellmchats.svg" alt="license"> </a> <a href="https://pypi.python.org/pypi/nonebot-plugin-moellmchats"> <img src="https://img.shields.io/pypi/v/nonebot-plugin-moellmchats.svg" alt="pypi"> </a> <img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="python"></div>
 
 ## 🚀 核心特性
 
@@ -19,7 +19,7 @@
 
 - 立体上下文管理：
 
-  - 群组/用户双层级隔离存储，滑动窗口+TTL过期机制
+  - 群组/用户双层级隔离存储，群组滑动窗口，用户滑动窗口+TTL过期机制
   - 支持上下文长度定制（默认群组10条/用户8条）
 
 - 个性化对话定制：
@@ -127,18 +127,9 @@
 智能调度配置 `model_config.json`(指令维护)<br>
 📌 自动生成（默认不开启moe和网络搜索），支持QQ指令实时切换；若手动修改，重启生效。<br>
 **模型名字必须为 `medels.json` 中的键值。**
-> 配置说明:
-- `use_moe`: 混合专家模式开关（true/false）
-- `moe_models`: 分级模型映射
-  - "0"：处理简单问题的模型
-  - "1"：处理中等问题的模型  
-  - "2"：处理复杂问题的模型
-- `selected_model`: 单一模式默认模型
-- `category_model`: 问题分类专用模型
-- `use_web_search`: 网络搜索功能开关
 ```json5
 {
-  "use_moe": true, // 启用混合专家模式
+  "use_moe": false, // 启用混合专家模式
   "moe_models": {
     // 问题难度分级模型映射
     "0": "dpsk-chat", // 简单问题
@@ -146,8 +137,8 @@
     "2": "dpsk-r1" // 复杂问题
   },
   "selected_model": "dpsk-r1", // 单一模式默认模型
-  "category_model": "glm", // 问题分类模型
-  "use_web_search": true // 启用网络搜索
+  "category_model": "glm-4-flash", // 问题分类模型（建议用免费或较小的模型）
+  "use_web_search": false // 启用网络搜索
 }
 ```
 
