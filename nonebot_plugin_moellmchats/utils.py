@@ -2,9 +2,7 @@ import nonebot
 from nonebot.log import logger
 from async_lru import alru_cache
 
-Bot_NICKNAME: str = list(nonebot.get_driver().config.nickname)[
-    0
-]  # bot的nickname,可以换成你自己的
+Bot_NICKNAME: str = list(nonebot.get_driver().config.nickname)[0]  # bot的nickname
 
 
 # hello之类的回复
@@ -69,9 +67,7 @@ async def get_member_name(group: int, sender_id: int) -> str:  # 将QQ号转换�
     bot = nonebot.get_bot()
     for bot in nonebot.get_bots().values():
         try:
-            member_info = await bot.get_group_member_info(
-                group_id=group, user_id=sender_id, no_cache=True
-            )
+            member_info = await bot.get_group_member_info(group_id=group, user_id=sender_id, no_cache=True)
             name = member_info.get("card") or member_info.get("nickname")
             break
         except Exception:
