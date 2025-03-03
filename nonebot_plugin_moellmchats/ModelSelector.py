@@ -21,7 +21,27 @@ class ModelSelector:
             with open(self.models_file, "r", encoding="utf-8") as f:
                 return json.load(f)
         else:
-            raise FileNotFoundError(f"找不到配置文件: {self.models_file}")
+            #创建默认
+            default_models = {
+              "dpsk-chat": {
+                "url": "https://api.deepseek.com/chat/completions",
+                "key": "Bearer xxx",
+                "model": "deepseek-chat",
+                "temperature": 1.5,
+                "max_tokens": 1024,
+                "proxy": "http://127.0.0.1:7890"
+              },
+              "dpsk-r1": {
+                "url": "https://api.deepseek.com/chat/completions",
+                "key": "Bearer xxxx",
+                "model": "deepseek-reasoner",
+                "top_k": 5,
+                "top_p": 1.0
+              }
+            }
+            self.models_file.parent.mkdir(parents=True, exist_ok=True)
+            self.models_file.touch()
+            self._write_config(self.models_file, default_models)
 
     def get_model_config(self):
         return json.dumps(self.model_config, indent=4, ensure_ascii=False)
