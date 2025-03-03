@@ -1,4 +1,5 @@
 from nonebot.plugin.on import on_message, on_notice, on_command, on_fullmatch
+from nonebot.plugin import PluginMetadata
 from nonebot.rule import to_me
 from nonebot.permission import SUPERUSER
 from nonebot.params import CommandArg
@@ -18,7 +19,6 @@ from .utils import (
     format_message,
 )
 from collections import defaultdict
-from nonebot.plugin import PluginMetadata
 from . import moe_llm as llm
 from .ModelSelector import model_selector
 from .TemperamentManager import temperament_manager
