@@ -1,13 +1,13 @@
 [tool.poetry]
-name = "nonebot-plugin-moellmchat"
+name = "nonebot-plugin-moellmchats"
 version = "0.1"
 description = "A Nonebot plugin, Multi-Model Chat System | Hybrid Scheduling·Search Augmented·Persona Customization"
 license = "GPL"
 authors = ["Elflare"]
 readme = "README.md"
-homepage = "https://github.com/FuQuan233/nonebot-plugin-llmchat"
-repository = "https://github.com/FuQuan233/nonebot-plugin-llmchat"
-documentation = "https://github.com/FuQuan233/nonebot-plugin-llmchat#readme"
+homepage = "https://github.com/Elflare/nonebot-plugin-moellmchats"
+repository = "https://github.com/Elflare/nonebot-plugin-moellmchats"
+documentation = "https://github.com/Elflare/nonebot-plugin-moellmchats#readme"
 keywords = ["nonebot", "nonebot2", "llm", "ai", "chat"]
 
 [tool.poetry.dependencies]
