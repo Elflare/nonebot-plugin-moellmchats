@@ -27,7 +27,8 @@ from .Config import config_parser
 __plugin_meta__ = PluginMetadata(
     name="MoEllm聊天",
     description="感谢llm，机器人变聪明了",
-    usage="""1.艾特或以bot、尔茄开头，与机器人对话\n2.用"性格切换xx"来切换性格（每个性格设定绑定每个人账号，不共享）\n3.用"ai xx"来快速调用纯ai助手\n4.超级管理员限定：用切换模型、切换moe、设置moe、设置联网来设置""",
+    usage="""1.艾特或以nickname开头，与机器人对话\n2.用"性格切换xx"来切换性格（每个性格设定绑定每个人账号，不共享）\n3.用"ai xx"来快速调用纯ai助手\n4.超级管理员限定：用切换模型、切换moe、设置moe、设置联网来设置""",
+    type="application",
     homepage="https://github.com/Elflare/nonebot-plugin-moellmchats",
     supported_adapters={"~onebot.v11"},
 )
