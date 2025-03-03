@@ -6,20 +6,19 @@
 
 <a href="./LICENSE"> <img src="https://img.shields.io/github/license/Elflare/nonebot-plugin-moellmchats.svg" alt="license"> </a> <a href="https://pypi.python.org/pypi/nonebot-plugin-moellmchats"> <img src="https://img.shields.io/pypi/v/nonebot-plugin-moellmchats.svg" alt="pypi"> </a> <img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="python"></div>
 
-- [nonebot-plugin-moellmchats](#nonebot-plugin-moellmchats)
-  - [🚀 核心特性](#-核心特性)
-  - [📦 安装](#-安装)
-  - [⚙️ 配置](#️-配置)
+- [🚀 核心特性](#-核心特性)
+- [📦 安装](#-安装)
+- [⚙️ 配置](#️-配置)
     - [基础配置](#基础配置-configjson手动维护)
     - [模型管理](#模型管理-modelsjson手动维护)
     - [智能调度配置](#智能调度配置-model_configjson指令维护)
     - [性格设定](#性格设定-temperamentsjson-手动维护)
     - [用户性格设定](#用户性格设定-user_temperamentsjson-指令维护)
-  - [🎮 使用](#-使用)
+- [🎮 使用](#-使用)
     - [指令表](#指令表)
     - [效果图](#效果图)
-  - [🔄 处理流程](#-处理流程)
-  - [鸣谢](#鸣谢)
+- [🔄 处理流程](#-处理流程)
+- [鸣谢](#鸣谢)
 
 ## 🚀 核心特性
 
