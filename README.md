@@ -2,7 +2,7 @@
 
 # nonebot-plugin-moellmchats
 
-✨ 智能多模型对话插件 | 混合调度·搜索增强·上下文优化·个性定制 ✨
+✨ 混合专家模型调度LLM插件 | 混合调度·联网搜索·上下文优化·个性定制·Token节约 ✨
 
 <a href="./LICENSE"> <img src="https://img.shields.io/github/license/Elflare/nonebot-plugin-moellmchats.svg" alt="license"> </a> <a href="https://pypi.python.org/pypi/nonebot-plugin-moellmchats"> <img src="https://img.shields.io/pypi/v/nonebot-plugin-moellmchats.svg" alt="pypi"> </a> <img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="python"></div>
 
@@ -38,12 +38,6 @@
 在 nonebot2 项目的根目录下打开命令行, 输入以下指令即可安装
 
     nb plugin install nonebot-plugin-moellmchats
-
-</details>
-<summary>使用 pip 安装</summary>
-输入以下指令即可安装
-
-    pip install nonebot-plugin-moellmchats
 
 </details>
 
@@ -86,22 +80,22 @@
 
 由于文件较多，所以统一放在 `data/moe_llm_chats/` 目录。**注意json不能有注释，所以复制后记得删除。**
 
-基础配置 `config.json`(手动维护)<br>
+### 基础配置 `config.json`(手动维护)<br>
 📌自动生成，修改后需要重启。Tavily搜索: [获取API Key](https://tavily.com/)。
 
 ```json5
 {
-  "max_group_history": 10, // 群组上下文最大长度
-  "max_user_history": 8, // 每个用户上下文最大长度
-  "user_history_expire_seconds": 600, // 用户上下文过期时间
-  "cd_seconds": 0, // 每个用户冷却时间（秒）
-  "search_api": "Bearer your_tavily_key", //联网搜索tavily api key。开启搜索必填
-  "fastai_enabled": false, // 快速AI助手开关
-  "max_retry_times": 3 // 最大重试次数
+  max_group_history: 10, // 群组上下文最大长度
+  max_user_history: 8, // 每个用户上下文最大长度
+  user_history_expire_seconds: 600, // 用户上下文过期时间
+  cd_seconds: 0, // 每个用户冷却时间（秒）
+  search_api: "Bearer your_tavily_key", //联网搜索tavily api key。开启搜索必填
+  fastai_enabled: false, // 快速AI助手开关
+  max_retry_times: 3, // 最大重试次数
 }
 ```
 
-模型管理 `models.json`(手动维护)<br>
+### 模型管理 `models.json`(手动维护)<br>
 📌**必填**。其中**url、model、key**必填，其他可省略。只能手动修改，重启生效。
 
 ```json
@@ -124,25 +118,26 @@
 }
 ```
 
-智能调度配置 `model_config.json`(指令维护)<br>
+### 智能调度配置 `model_config.json`(指令维护)<br>
 📌 自动生成（默认不开启moe和网络搜索），支持QQ指令实时切换；若手动修改，重启生效。<br>
 **模型名字必须为 `medels.json` 中的键值。**
+
 ```json5
 {
-  "use_moe": false, // 启用混合专家模式
-  "moe_models": {
+  use_moe: false, // 启用混合专家模式
+  moe_models: {
     // 问题难度分级模型映射
     "0": "dpsk-chat", // 简单问题
     "1": "dpsk-chat", // 中等问题
-    "2": "dpsk-r1" // 复杂问题
+    "2": "dpsk-r1", // 复杂问题
   },
-  "selected_model": "dpsk-r1", // 单一模式默认模型
-  "category_model": "glm-4-flash", // 问题分类模型（建议用免费或较小的模型）
-  "use_web_search": false // 启用网络搜索
+  selected_model: "dpsk-r1", // 单一模式默认模型
+  category_model: "glm-4-flash", // 问题分类模型（建议用免费或较小的模型）
+  use_web_search: false, // 启用网络搜索
 }
 ```
 
-性格设定 `temperaments.json` (手动维护)<br>
+### 性格设定 `temperaments.json` (手动维护)<br>
 📌 不用写“你在群组”等设定，系统自动补全 | 修改后需重启生效
 
 ```json
@@ -153,18 +148,20 @@
 }
 ```
 
-用户性格设定 `user_temperaments.json` (指令维护)<br>
+### 用户性格设定 `user_temperaments.json` (指令维护)<br>
 📌 自动生成 | QQ指令实时切换个性 | 若手动修改，需重启生效
 
 ```json
 {
-  "qq号": "ai助手",
-  "123456": "默认",
+  "用户1的qq号": "ai助手",
+  "用户2的qq号": "默认"
 }
 ```
 
 ## 🎮 使用
+
 ### 指令表
+
 |         指令         |    权限    | 范围 |     参数      |                      说明                      |
 | :------------------: | :--------: | :--: | :-----------: | :--------------------------------------------: |
 | @Bot或以nickname开头 |     无     | 群聊 |   对话内容    |                    聊天对话                    |
@@ -176,13 +173,13 @@
 |       设置moe        | 超级管理员 | 群聊 | 0、1、开、关  |            是否开启混合专家调度模式            |
 |       切换moe        | 超级管理员 | 群聊 | 难度 模型名字 |     难度为0、1、2，如：`切换moe 0 dpsk-r1`     |
 |       设置联网       | 超级管理员 | 群聊 | 0、1、开、关  |                是否开启网络搜索                |
+
 ### 效果图
 
 冷却与队列
 ![冷却与队列](./imgs/cd.png)
 联网搜索
 ![联网搜索](./imgs/search.png)
-
 
 ## 🔄 处理流程
 
@@ -218,7 +215,7 @@ graph TD
 
 2. 容错重试机制
 
-   - 多级重试：网络错误时自动触发阶梯式重试（间隔：5s → 10s → 15s）
+   - 多级重试：网络错误时自动触发阶梯式重试（间隔：2s → 4s → 8s）
 
 3. 混合调度流程
 
@@ -229,10 +226,12 @@ graph TD
    - 分级路由：简单问题直连轻量模型（响应速度提升40%），复杂问题调用专家模型（准确度提升60%）
 
 4. Token消耗降低
-    - 大致可降低API调用失败率78%，Token浪费减少63%，同时保障高并发场景下的系统稳定性。
+   - 大致可降低API调用失败率78%，Token浪费减少63%，同时保障高并发场景下的系统稳定性。
 
 ## 鸣谢
 
 - [Nonebot](https://nonebot.dev/) 项目所发布的高品质机器人框架
 - [nonebot-plugin-template](https://github.com/A-kirami/nonebot-plugin-template) 所发布的插件模板
 - [nonebot-plugin-llmchat](https://github.com/FuQuan233/nonebot-plugin-llmchat) 部分参考
+- [deepseek-r1](https://deepseek.com/) 我和共同创作README
+- 以及所有LLM开发者
