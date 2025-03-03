@@ -16,6 +16,7 @@ aiohttp = "^3.8.1"
 nonebot2 = "^2.2.0"
 nonebot-adapter-onebot = "^2.0.0"
 ujson = "^5.7.0"
+async-lru = "^2.0.4"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.8.0"
