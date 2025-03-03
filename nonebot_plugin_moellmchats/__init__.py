@@ -186,7 +186,7 @@ async def handle_llm(bot: Bot, event: GroupMessageEvent, matcher, is_ai=False):
     else:
         temp = temperament_manager.get_temperament(user_id)
         if not temp:
-            await matcher.finish("出错了，搞快喊机器人主人来修复一下吧~")
+            await matcher.finish("出错了，赶快喊机器人主人来修复一下吧~")
     llm_chat = llm.MoeLlm(bot, event, format_message_dict, temperament=temp)
     reply = await llm_chat.get_llm_chat()
     is_repeat_ask_dict[user_id] = False

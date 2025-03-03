@@ -1,5 +1,6 @@
 import ujson as json
 import aiohttp
+import asyncio
 import traceback
 from asyncio import TimeoutError
 from nonebot.log import logger
@@ -94,6 +95,7 @@ class MoeLlm:
                             self.event,
                             f"api又卡了呐！第 {retry_times+1} 次尝试，请勿多次发送~",
                         )
+                        await asyncio.sleep(retry_times * 5)
                     async with session.post(
                         url=model_info["url"],
                         data=data,

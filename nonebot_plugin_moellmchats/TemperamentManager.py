@@ -25,9 +25,9 @@ class TemperamentManager:
     def get_all_temperaments(self) -> str:
         return json.dumps(self.temperaments, indent=4, ensure_ascii=False)
 
-    def get_temperament_prompt(self, temperament) -> str:
+    def get_temperament_prompt(self, temperament:str) -> str:
         """根据性格获取提示语"""
-        return self.temperament_dict.get(temperament, "你是ai助手。回答像真人且简短")
+        return self.temperaments.get(temperament, "你是ai助手。回答像真人且简短")
 
     def set_temperament_dict(self, qq, temperament) -> bool:
         """设置配置项的值"""

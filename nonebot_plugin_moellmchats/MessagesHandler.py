@@ -1,10 +1,9 @@
 from collections import defaultdict, deque
 import time
+from .Config import config_parser
 
-MAX_MESSAGE_LENGTH = 8  # user和ai两个的对话
-MAX_AGE = 600
 messages_dict = defaultdict(
-    lambda: deque(maxlen=MAX_MESSAGE_LENGTH)
+    lambda: deque(maxlen=config_parser.get_config("max_user_history"))
 )  # {'qq':messages_entity_list}
 # messages_entity_list = [messages_entity1, messages_entity2]
 
@@ -44,7 +43,9 @@ class MessagesHandler:
             # 超过时间一对对话的删了
             for i in range(len(self.messages_entity_list) - 1, -1, -1):
                 messages_entity = self.messages_entity_list[i]
-                if time.time() - messages_entity.timestamp > MAX_AGE:
+                if time.time() - messages_entity.timestamp > config_parser.get_config(
+                    "user_history_expire_seconds"
+                ):
                     self.messages_entity_list.popleft()
             if (
                 self.messages_entity_list  # 还有对话
