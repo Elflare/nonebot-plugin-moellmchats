@@ -31,7 +31,7 @@ class TemperamentManager:
 
     def get_temperament_prompt(self, temperament: str) -> str:
         """根据性格获取提示语"""
-        return self.temperaments.get(temperament, "你是ai助手。回答像真人且简短")
+        return self.temperaments.get(temperament, "你是ai助手。回答像真人且尽量简短，回复格式为@id content")
 
     def set_temperament_dict(self, qq, temperament) -> bool:
         """设置配置项的值"""
