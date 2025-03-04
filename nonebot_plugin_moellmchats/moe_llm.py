@@ -34,7 +34,9 @@ class MoeLlm:
         self.prompt = f"{temperament_manager.get_temperament_prompt(temperament)}。现在你在一个qq群中。我的id是{ event.sender.card or event.sender.nickname},你只需回复我。群里近期聊天内容，冒号前面是id，后面是内容：\n"
         # if self.is_objective:
         # self.prompt += "现在你在一个qq群中，是一个普通成员，根据上文主动发送消息。要求：1.你的发言尽可能像普通用户，简短且符合群内氛围。2.暂时不用尔茄身份发送，可以普通群友身份或模仿某个群友的风格。3.仅回复一条消息，且必须是群聊相关，若无话题，可以单纯发个颜文字卖萌。4.冒号前面是id，后面是内容，针对某人回复时格式为@id content，不针对就不加@id\n"
-        self.prompt += "\n".join(context_dict[event.group_id])
+        # 去除群聊最新的对话，因为在用户的上下文中
+        context_dict_ = list(context_dict[event.group_id])[:-1]
+        self.prompt += "\n".join(context_dict_)
 
     async def get_llm_chat(self) -> str:
         messages_handler = MessagesHandler(self.user_id)
