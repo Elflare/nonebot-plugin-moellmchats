@@ -11,11 +11,11 @@
 - [⚙️ 配置](#️-配置)
   - [`.env` 配置](#env-配置)
   - [本插件主要配置](#本插件主要配置)
-    - [基础配置 `config.json`(手动维护)](#基础配置-configjson手动维护)
-    - [模型管理 `models.json`(手动维护)](#模型管理-modelsjson手动维护)
-    - [智能调度配置 `model_config.json`(指令维护)](#智能调度配置-model_configjson指令维护)
-    - [性格设定 `temperaments.json` (手动维护)](#性格设定-temperamentsjson-手动维护)
-    - [用户性格设定 `temperament_config.json` (指令维护)](#用户性格设定-temperament_configjson-指令维护)
+    - [基础配置](#基础配置-configjson手动维护)
+    - [模型管理](#模型管理-modelsjson手动维护)
+    - [智能调度配置](#智能调度配置-model_configjson指令维护)
+    - [性格设定](#性格设定-temperamentsjson-手动维护)
+    - [用户性格设定](#用户性格设定-temperament_configjson-指令维护)
 - [🎮 使用](#-使用)
   - [指令表](#指令表)
   - [效果图](#效果图)
@@ -88,7 +88,7 @@
 
 打开 nonebot2 项目根目录下的 `pyproject.toml` 文件, 在 `[tool.nonebot]` 部分追加写入
 
-    plugins = ["nonebot_plugin_llmchat"]
+    plugins = ["nonebot_plugin_moellmchats"]
 
 </details>
 
@@ -100,12 +100,14 @@
 
 |       配置项       | 必填 | 默认值 |                                          说明                                          |
 | :----------------: | :--: | :----: | :------------------------------------------------------------------------------------: |
+|     SUPERUSERS     |  是  |   无   |                    超级用户，NoneBot自带配置项，本插件要求此项必填                     |
 |      NICKNAME      |  是  |   无   |                   机器人昵称，NoneBot自带配置项，本插件要求此项必填                    |
 | LOCALSTORE_USE_CWD |  否  |   无   | 是否使用当前工作目录作为本地存储目录，如果为True，则会将本地存储目录设置为当前工作目录 |
 
 例：
 
 ```.env
+SUPERUSERS=["you qq"]  # 配置 NoneBot 超级用户
 NICKNAME=["bot","机器人"]  # 配置机器人的昵称
 #localstore配置
 LOCALSTORE_USE_CWD=True #可选
