@@ -32,6 +32,7 @@
 - 智能网络搜索整合：
 
   - 语义分析自动触发Tavily搜索，提供精准摘要
+  - 支持任意LLM，大幅节约Token
 
 - 立体上下文管理：
 
@@ -107,7 +108,7 @@
 例：
 
 ```.env
-SUPERUSERS=["you qq"]  # 配置 NoneBot 超级用户
+SUPERUSERS=["your qq"]  # 配置 NoneBot 超级用户
 NICKNAME=["bot","机器人"]  # 配置机器人的昵称
 #localstore配置
 LOCALSTORE_USE_CWD=True #可选
