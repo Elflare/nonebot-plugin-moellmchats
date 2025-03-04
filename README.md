@@ -9,11 +9,13 @@
 - [🚀 核心特性](#-核心特性)
 - [📦 安装](#-安装)
 - [⚙️ 配置](#️-配置)
-  - [基础配置](#基础配置-configjson手动维护)
-  - [模型管理](#模型管理-modelsjson手动维护)
-  - [智能调度配置](#智能调度配置-model_configjson指令维护)
-  - [性格设定](#性格设定-temperamentsjson-手动维护)
-  - [用户性格设定](#用户性格设定-user_temperamentsjson-指令维护)
+  - [`.env` 配置](#env-配置)
+  - [本插件主要配置](#本插件主要配置)
+    - [基础配置 `config.json`(手动维护)](#基础配置-configjson手动维护)
+    - [模型管理 `models.json`(手动维护)](#模型管理-modelsjson手动维护)
+    - [智能调度配置 `model_config.json`(指令维护)](#智能调度配置-model_configjson指令维护)
+    - [性格设定 `temperaments.json` (手动维护)](#性格设定-temperamentsjson-手动维护)
+    - [用户性格设定 `temperament_config.json` (指令维护)](#用户性格设定-temperament_configjson-指令维护)
 - [🎮 使用](#-使用)
   - [指令表](#指令表)
   - [效果图](#效果图)
@@ -92,11 +94,30 @@
 
 ## ⚙️ 配置
 
+### `.env` 配置
+
+在 nonebot2 项目的`.env`文件中添加下表中的必填配置
+
+|       配置项       | 必填 | 默认值 |                                          说明                                          |
+| :----------------: | :--: | :----: | :------------------------------------------------------------------------------------: |
+|      NICKNAME      |  是  |   无   |                   机器人昵称，NoneBot自带配置项，本插件要求此项必填                    |
+| LOCALSTORE_USE_CWD |  否  |   无   | 是否使用当前工作目录作为本地存储目录，如果为True，则会将本地存储目录设置为当前工作目录 |
+
+例：
+
+```.env
+NICKNAME=["bot","机器人"]  # 配置机器人的昵称
+#localstore配置
+LOCALSTORE_USE_CWD=True #可选
+```
+
+### 本插件主要配置
+
 由于文件较多，所以统一放在 `nonebot_plugin_localstore.get_plugin_config_dir()` 目录，具体参照[NoneBot Plugin LocalStore](https://github.com/nonebot/plugin-localstore)。<br>
 配置文件在首次运行时自动生成，可以先运行一下，再停止后手动修改。<br>
 **注意**：若是手动复制，因为json不能有注释，所以复制后记得删除。
 
-### 基础配置 `config.json`(手动维护)<br>
+#### 基础配置 `config.json`(手动维护)<br>
 
 📌修改后需要重启。Tavily搜索: [获取API Key](https://tavily.com/)。
 
@@ -112,7 +133,7 @@
 }
 ```
 
-### 模型管理 `models.json`(手动维护)<br>
+#### 模型管理 `models.json`(手动维护)<br>
 
 ⚠️**必填**。其中**url、model、key**必填，其他可省略。只能手动修改，重启生效。
 
@@ -136,7 +157,7 @@
 }
 ```
 
-### 智能调度配置 `model_config.json`(指令维护)<br>
+#### 智能调度配置 `model_config.json`(指令维护)<br>
 
 📌 默认不开启moe和网络搜索，支持QQ指令实时切换；若手动修改，重启生效。<br>
 **模型名字必须为 `medels.json` 中的键值。**
@@ -156,19 +177,19 @@
 }
 ```
 
-### 性格设定 `temperaments.json` (手动维护)<br>
+#### 性格设定 `temperaments.json` (手动维护)<br>
 
 📌 不用写“你在群组”等设定，系统自动补全 | 修改后需重启生效
 
 ```json
 {
-  "默认": "你是xx角色。回答像真人且尽量简短，回复格式为@id content",
-  "ai助手": "你是ai助手。回答像真人且尽量简短，回复格式为@id content"
+  "默认": "你是ai助手。回答像真人且尽量简短，回复格式为@id content", //性格默认值，可以不填，但是最好填上，没设置过性格的群友默认调用该性格
+  "ai助手": "你是ai助手。回复格式为@id content", // ai助手，若开启快速调用纯ai助手，则需要填写
   "雌小鬼": "你是一个雌小鬼"
 }
 ```
 
-### 用户性格设定 `temperament_config.json` (指令维护)<br>
+#### 用户性格设定 `temperament_config.json` (指令维护)<br>
 
 📌 全自动生成和命令配置，无需手动复制或修改 | 若手动修改，需重启生效
 
