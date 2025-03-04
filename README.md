@@ -168,7 +168,7 @@
 }
 ```
 
-### 用户性格设定 `user_temperaments.json` (指令维护)<br>
+### 用户性格设定 `temperament_config.json` (指令维护)<br>
 
 📌 全自动生成和命令配置，无需手动复制或修改 | 若手动修改，需重启生效
 
