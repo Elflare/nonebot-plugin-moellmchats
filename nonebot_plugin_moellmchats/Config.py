@@ -1,10 +1,14 @@
 import ujson as json
 from pathlib import Path
 
+import nonebot_plugin_localstore as store
+
+config_path: Path = store.get_plugin_config_dir()
+
 
 class ConfigParser:
     def __init__(self):
-        self.filepath = Path("data/moe_llm_chats/config.json")
+        self.filepath = Path(config_path / "config.json")
         self.config = self.parse_config()
 
     def parse_config(self):

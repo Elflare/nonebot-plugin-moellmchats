@@ -4,6 +4,7 @@ from async_lru import alru_cache
 
 Bot_NICKNAME: str = list(nonebot.get_driver().config.nickname)[0]  # bot的nickname
 
+
 # hello之类的回复
 hello__reply = [
     "你好喵~",

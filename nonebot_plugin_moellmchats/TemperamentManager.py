@@ -3,12 +3,16 @@ from traceback import format_exc
 from nonebot.log import logger
 from pathlib import Path
 
+import nonebot_plugin_localstore as store
+
+config_path: Path = store.get_plugin_config_dir()
+
 
 # 性格设置类
 class TemperamentManager:
     def __init__(self):
-        self.temperament_config = Path("data/moe_llm_chats/temperament_config.json")
-        self.temperaments_path = Path("data/moe_llm_chats/temperaments.json")
+        self.temperament_config = Path(config_path / "temperament_config.json")
+        self.temperaments_path = Path(config_path / "temperaments.json")
         self.temperaments = self.read_temperaments()
         self.temperament_dict = self.read_temperament()
 
@@ -25,7 +29,7 @@ class TemperamentManager:
     def get_all_temperaments(self) -> str:
         return json.dumps(self.temperaments, indent=4, ensure_ascii=False)
 
-    def get_temperament_prompt(self, temperament:str) -> str:
+    def get_temperament_prompt(self, temperament: str) -> str:
         """根据性格获取提示语"""
         return self.temperaments.get(temperament, "你是ai助手。回答像真人且简短")
 
@@ -40,6 +44,8 @@ class TemperamentManager:
         if not self.temperament_config.exists():
             self.temperament_config.parent.mkdir(parents=True, exist_ok=True)
             self.temperament_config.touch()
+            with open(self.temperament_config, "w", encoding="utf-8") as f:
+                json.dump({}, f, ensure_ascii=False, indent=4)
             return {}
         try:
             with open(self.temperament_config, "r", encoding="utf-8") as f:

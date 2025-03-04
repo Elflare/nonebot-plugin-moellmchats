@@ -1,5 +1,5 @@
 from nonebot.plugin.on import on_message, on_notice, on_command, on_fullmatch
-from nonebot.plugin import PluginMetadata
+from nonebot.plugin import PluginMetadata, require
 from nonebot.rule import to_me
 from nonebot.permission import SUPERUSER
 from nonebot.params import CommandArg
@@ -24,10 +24,13 @@ from .ModelSelector import model_selector
 from .TemperamentManager import temperament_manager
 from .Config import config_parser
 
+require("nonebot_plugin_localstore")
+
+
 __plugin_meta__ = PluginMetadata(
     name="MoEllm聊天",
     description="感谢llm，机器人变聪明了",
-    usage="""1.艾特或以nickname开头，与机器人对话\n2.用"性格切换xx"来切换性格（每个性格设定绑定每个人账号，不共享）\n3.用"ai xx"来快速调用纯ai助手\n4.超级管理员限定：用切换模型、切换moe、设置moe、设置联网来设置""",
+    usage="""1.艾特或以bot的名字开头进行对话\n2.用"性格切换xx"来切换性格（每个性格设定绑定每个人账号，不共享）\n3.用"ai xx"来快速调用纯ai助手\n4.超级管理员限定：用切换模型、切换moe、设置moe、设置联网来设置""",
     type="application",
     homepage="https://github.com/Elflare/nonebot-plugin-moellmchats",
     supported_adapters={"~onebot.v11"},
@@ -44,7 +47,9 @@ async def context_dict_func(bot: Bot, event: MessageEvent):
     if event.message.extract_plain_text().strip():  # 有文字才记录
         if message_dict := await format_message(event):
             sender_name = event.sender.card or event.sender.nickname
-            llm.context_dict[event.group_id].append(f"{sender_name}:{''.join(message_dict['text'])}")
+            llm.context_dict[event.group_id].append(
+                f"{sender_name}:{''.join(message_dict['text'])}"
+            )
         # 1%概率主动发
         # if random.randint(1, 100) == 1:
         #     glm = llm.Glm(
@@ -55,7 +60,9 @@ async def context_dict_func(bot: Bot, event: MessageEvent):
 
 
 # 性格切换
-temperament_switch_matcher = on_command("性格切换", aliases={"切换性格", "人格切换", "切换人格"}, priority=10, block=True)
+temperament_switch_matcher = on_command(
+    "性格切换", aliases={"切换性格", "人格切换", "切换人格"}, priority=10, block=True
+)
 
 
 @temperament_switch_matcher.handle()
@@ -66,12 +73,18 @@ async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
             if temperament_manager.set_temperament_dict(event.user_id, temp):
                 await temperament_switch_matcher.finish(f"已切换性格为{temp}")
             else:
-                await temperament_switch_matcher.finish("出错了，搞快喊机器人主人来修复一下吧~")
-    await temperament_switch_matcher.finish(f"只有{temperament_manager.get_temperaments_keys()}中的性格可以切换")
+                await temperament_switch_matcher.finish(
+                    "出错了，搞快喊机器人主人来修复一下吧~"
+                )
+    await temperament_switch_matcher.finish(
+        f"只有{temperament_manager.get_temperaments_keys()}中的性格可以切换"
+    )
 
 
 # 查看性格
-temperament_check_matcher = on_fullmatch(("查看性格", "查看人格"), priority=10, block=True)
+temperament_check_matcher = on_fullmatch(
+    ("查看性格", "查看人格"), priority=10, block=True
+)
 
 
 @temperament_check_matcher.handle()
@@ -113,7 +126,9 @@ async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
     await model_matcher.finish(result)
 
 
-set_web_search_matcher = on_command("设置联网", aliases={"切换联网"}, permission=SUPERUSER, priority=10, block=True)
+set_web_search_matcher = on_command(
+    "设置联网", aliases={"切换联网"}, permission=SUPERUSER, priority=10, block=True
+)
 
 
 @set_web_search_matcher.handle()
@@ -147,7 +162,9 @@ async def handle_llm(bot: Bot, event: GroupMessageEvent, matcher, is_ai=False):
     if event.message.extract_plain_text().strip():
         format_message_dict = await format_message(event)
     else:
-        await matcher.finish(Message(random.choice(hello__reply)))  # 没有就选一个卖萌回复
+        await matcher.finish(
+            Message(random.choice(hello__reply))
+        )  # 没有就选一个卖萌回复
     user_id = event.sender.user_id
     if (
         # not model_selector.get_moe()  # 单模型加cd
@@ -163,7 +180,9 @@ async def handle_llm(bot: Bot, event: GroupMessageEvent, matcher, is_ai=False):
             f"{sender_name}的llm对话cd中, 将会在{config_parser.get_config('cd_seconds') - (event.time-cd[user_id])}秒后自动回答，请不要重复提问~"
         )
         is_repeat_ask_dict[user_id] = True
-        await asyncio.sleep(max(0, config_parser.get_config("cd_seconds") - (event.time - cd[user_id])))
+        await asyncio.sleep(
+            max(0, config_parser.get_config("cd_seconds") - (event.time - cd[user_id]))
+        )
     cd[user_id] = event.time
     if is_ai:
         temp = "ai助手"

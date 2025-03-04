@@ -1,13 +1,17 @@
 from pathlib import Path
 import ujson as json
 
+import nonebot_plugin_localstore as store
+
+config_path: Path = store.get_plugin_config_dir()
+
 
 # 模型选择类
 class ModelSelector:
     def __init__(self):
         # 配置文件路径
-        self.models_file = Path("data/moe_llm_chats/models.json")
-        self.model_config_file = Path("data/moe_llm_chats/model_config.json")
+        self.models_file = Path(config_path / "models.json")
+        self.model_config_file = Path(config_path / "model_config.json")
 
         # 加载配置文件
         self.models = self._load_models()
@@ -21,23 +25,23 @@ class ModelSelector:
             with open(self.models_file, "r", encoding="utf-8") as f:
                 return json.load(f)
         else:
-            #创建默认
+            # 创建默认
             default_models = {
-              "dpsk-chat": {
-                "url": "https://api.deepseek.com/chat/completions",
-                "key": "Bearer xxx",
-                "model": "deepseek-chat",
-                "temperature": 1.5,
-                "max_tokens": 1024,
-                "proxy": "http://127.0.0.1:7890"
-              },
-              "dpsk-r1": {
-                "url": "https://api.deepseek.com/chat/completions",
-                "key": "Bearer xxxx",
-                "model": "deepseek-reasoner",
-                "top_k": 5,
-                "top_p": 1.0
-              }
+                "dpsk-chat": {
+                    "url": "https://api.deepseek.com/chat/completions",
+                    "key": "Bearer xxx",
+                    "model": "deepseek-chat",
+                    "temperature": 1.5,
+                    "max_tokens": 1024,
+                    "proxy": "http://127.0.0.1:7890",
+                },
+                "dpsk-r1": {
+                    "url": "https://api.deepseek.com/chat/completions",
+                    "key": "Bearer xxxx",
+                    "model": "deepseek-reasoner",
+                    "top_k": 5,
+                    "top_p": 1.0,
+                },
             }
             self.models_file.parent.mkdir(parents=True, exist_ok=True)
             self.models_file.touch()
@@ -101,7 +105,6 @@ class ModelSelector:
         self.model_config["use_web_search"] = is_web_search
         self._write_config(self.model_config_file, self.model_config)
         return "已开启联网搜索" if is_web_search else "已关闭联网搜索"
-
 
     def set_chat_model(self, model_name: str) -> str:
         # 设置单个模型，model_name为models.json中的键

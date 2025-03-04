@@ -97,7 +97,7 @@ class MoeLlm:
                             self.event,
                             f"api又卡了呐！第 {retry_times+1} 次尝试，请勿多次发送~",
                         )
-                        await asyncio.sleep(retry_times * 5)
+                        await asyncio.sleep(2**retry_times)
                     async with session.post(
                         url=model_info["url"],
                         data=data,
@@ -110,6 +110,7 @@ class MoeLlm:
                         # 返回200
                         if resp.status != 200 or not response:
                             retry_times += 1
+                            logger.error(response)
                             continue
                     if choices := response.get("choices"):
                         content = choices[0]["message"]["content"]
