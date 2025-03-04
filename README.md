@@ -115,7 +115,7 @@ LOCALSTORE_USE_CWD=True #可选
 
 由于文件较多，所以统一放在 `nonebot_plugin_localstore.get_plugin_config_dir()` 目录，具体参照[NoneBot Plugin LocalStore](https://github.com/nonebot/plugin-localstore)。<br>
 配置文件在首次运行时自动生成，可以先运行一下，再停止后手动修改。<br>
-**注意**：若是手动复制，因为json不能有注释，所以复制后记得删除。
+**注意**：若是手动复制，因为json不能有注释，所以复制后记得删除注释以及末尾逗号。
 
 #### 基础配置 `config.json`(手动维护)<br>
 
