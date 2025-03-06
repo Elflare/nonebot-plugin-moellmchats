@@ -14,7 +14,8 @@ class Categorize:
 
 {
   "difficulty": "0 | 1 | 2",
-  "internet_required": true | false
+  "internet_required": true | false,
+  "key_word": string
 }
 说明：
 
@@ -22,9 +23,10 @@ difficulty: 用来表示问题的难度等级：
 "0": 简单直接明了的问题，几乎无需思考或计算。
 "1": 中等难度的问题，可能需要一定的思考、分析或计算。
 "2": 高难度的问题，需要深厚的专业知识或广泛的研究才能回答。
-internet_required: 布尔值，表示是否需要访问互联网或外部数据库来提供完整答案：
-true: 需要访问外部信息或数据库。
-false: 不需要互联网连接，可以仅凭知识回答。"""
+internet_required: 布尔值，表示是否需要访问互联网或外部数据库来提供完整答案：true: 需要访问外部信息或数据库。false: 不需要互联网连接，可以仅凭知识回答。
+"key_word": 字符串。当internet_required为true时，根据这句话的内容，判断哪些是用来搜索的字符串，用空格分隔。若为false，则返回空。
+"""
+
         send_message_list = [
             {"role": "system", "content": prompt},
             {"role": "user", "content": self.plain},
@@ -57,7 +59,11 @@ false: 不需要互联网连接，可以仅凭知识回答。"""
                 if choices := response.get("choices"):
                     result = choices[0]["message"]["content"]
                     result = json.loads(result)
-                    return str(result["difficulty"]), result["internet_required"]
+                    return (
+                        str(result["difficulty"]),
+                        result["internet_required"],
+                        result["key_word"],
+                    )
             except Exception:
                 logger.warning(traceback.format_exc())
                 try_times += 1

@@ -58,10 +58,17 @@ class MessagesHandler:
                 format_message_dict["text"].pop(0)
 
         plain = "".join(format_message_dict["text"])
+        self.new_user_msg = {"role": "user", "content": plain}  # 最新的问题
         self.messages_entity.add_user_msg(
-            {"role": "user", "content": plain}
+            self.new_user_msg
         )  # 添加用户问题，之后再处理回答
         return plain
+
+    def search_message_handler(self, search_info: str):
+        # 添加搜索信息
+        self.new_user_msg["content"] += (
+            f"\n(这是联网搜索结果，供你进行参考： {search_info})"
+        )
 
     def append_message_list(self, messages_entity):
         messages_dict[self.user_id].append(self.messages_entity)

@@ -47,14 +47,18 @@ class MoeLlm:
             category = Categorize(plain)
             category_result = await category.get_category()
             if isinstance(category_result, tuple):  # 如果是tuple，则说明没有问题
-                difficulty, internet_required = category_result
-                logger.info(f"难度：{difficulty}, 是否联网：{internet_required}")
+                difficulty, internet_required, key_word = category_result
+                logger.info(
+                    f"难度：{difficulty}, 是否联网：{internet_required}，搜索关键词：{key_word}"
+                )
                 # 判断是否联网
                 if internet_required and model_selector.get_web_search():
-                    search = Search(plain)
+                    search = Search(key_word)
                     await self.bot.send(self.event, "正在搜索，请稍等...")
                     if search_result := await search.get_search():
-                        plain += f"\n(这是联网搜索结果，供你进行参考： {search_result})"
+                        messages_handler.search_message_handler(search_result)
+                    else:
+                        await self.bot.send(self.event, "搜索失败，请检查日志输出")
                 # 根据难度改key和url
                 if model_selector.get_moe():  # moe
                     model_info = model_selector.get_moe_current_model(difficulty)
@@ -132,7 +136,6 @@ class MoeLlm:
                         else:
                             continue
                     else:
-                        # {'code': 'DataInspectionFailed', 'message': 'Output data may contain inappropriate content.', 'request_id': '0a973d6c-ea7d-9f4c-b850-35c23924edb5'}
                         if response.get("code") == "DataInspectionFailed":
                             messages_handler.clrear_messages()
                             return "消息合法检查未通过，少说血腥、暴力、色情的话呐~"
