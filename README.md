@@ -154,6 +154,7 @@ LOCALSTORE_USE_CWD=True #可选
     "url": "https://api.deepseek.com/chat/completions",
     "key": "Bearer xxxx",
     "model": "deepseek-reasoner",
+    "stream": true,
     "top_k": 5,
     "top_p": 1.0
   }

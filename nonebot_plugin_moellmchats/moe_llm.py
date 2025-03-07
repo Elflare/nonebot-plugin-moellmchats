@@ -32,15 +32,84 @@ class MoeLlm:
         self.user_id = event.user_id
         self.is_objective = is_objective
         self.prompt = f"{temperament_manager.get_temperament_prompt(temperament)}。现在你在一个qq群中。我的id是{ event.sender.card or event.sender.nickname},你只需回复我。群里近期聊天内容，冒号前面是id，后面是内容：\n"
-        # if self.is_objective:
-        # self.prompt += "现在你在一个qq群中，是一个普通成员，根据上文主动发送消息。要求：1.你的发言尽可能像普通用户，简短且符合群内氛围。2.暂时不用尔茄身份发送，可以普通群友身份或模仿某个群友的风格。3.仅回复一条消息，且必须是群聊相关，若无话题，可以单纯发个颜文字卖萌。4.冒号前面是id，后面是内容，针对某人回复时格式为@id content，不针对就不加@id\n"
         # 去除群聊最新的对话，因为在用户的上下文中
         context_dict_ = list(context_dict[event.group_id])[:-1]
         self.prompt += "\n".join(context_dict_)
 
+    async def stream_llm_chat(self,session, url, headers, data, proxy)->str:
+        # 流式响应内容
+        result = []
+        async with session.post(
+            url, headers=headers, json=data, proxy=proxy
+        ) as response:
+            # 确保响应是成功的
+            if response.status == 200:
+                # 异步迭代响应内容
+                async for line in response.content:
+                    if line.startswith(b"data: [DONE]"):
+                        break  # 结束标记，退出循环
+                    if line and line.startswith(b"data:"):
+                        json_data = json.loads(line[5:].decode("utf-8"))
+                        if (
+                            content := json_data.get("choices", [{}])[0]
+                            .get("delta", {})
+                            .get("content", "")
+                        ):
+                            result.append(content)
+                return "".join(result)
+            else:
+                logger.error(f"Error: {response.status}")
+                return None
+
+    async def none_stream_llm_chat(self, session, url, headers, data, proxy) -> str:
+        async with session.post(
+            url=url,
+            data=data,
+            headers=headers,
+            ssl=False,
+            proxy=proxy,
+        ) as resp:
+            # 获取整个响应文本
+            response = await resp.json()
+            # 返回200
+            if resp.status != 200 or not response:
+                logger.error(response)
+                return None
+        if choices := response.get("choices"):
+            content = choices[0]["message"]["content"]
+            start_tag = "<think>"
+            end_tag = "</think>"
+            start = content.find(start_tag)
+            end = content.find(end_tag)
+            if start == -1 and end != -1:
+                end += len(end_tag)
+                start = 0
+                result = content[:start] + content[end:]
+            elif start != -1 and end != -1:
+                end += len(end_tag)
+                result = content[:start] + content[end:]
+            else:
+                result = content
+            if result.strip():
+                return result.strip()
+            else:
+                return None
+        else:
+            if response.get("code") == "DataInspectionFailed":
+                self.messages_handler.clrear_messages()
+                return "消息合法检查未通过，少说血腥、暴力、色情的话呐~"
+            elif response.get("code") == 50501:
+                return None
+            else:
+                logger.error(response)
+                return "bug了呐，赶快喊机器人主人来修一下吧~"
+        if not self.is_objective:
+            self.messages_handler.post_process(result.strip())
+        return result.strip()
+
     async def get_llm_chat(self) -> str:
-        messages_handler = MessagesHandler(self.user_id)
-        plain = messages_handler.pre_process(self.format_message_dict)
+        self.messages_handler = MessagesHandler(self.user_id)
+        plain = self.messages_handler.pre_process(self.format_message_dict)
         model_info = None
         # 获取难度和是否联网
         if model_selector.get_moe() or model_selector.get_web_search():
@@ -56,7 +125,7 @@ class MoeLlm:
                     search = Search(key_word)
                     await self.bot.send(self.event, "正在搜索，请稍等...")
                     if search_result := await search.get_search():
-                        messages_handler.search_message_handler(search_result)
+                        self.messages_handler.search_message_handler(search_result)
                     else:
                         await self.bot.send(self.event, "搜索失败，请检查日志输出")
                 # 根据难度改key和url
@@ -65,7 +134,7 @@ class MoeLlm:
         if not model_info:  # 分类失败或者不是用的moe
             model_info = model_selector.get_model("selected_model")
         logger.info(f"模型选择为：{model_info['model']}")
-        send_message_list = messages_handler.get_send_message_list()
+        send_message_list = self.messages_handler.get_send_message_list()
         send_message_list.insert(0, {"role": "system", "content": self.prompt})
         data = {
             "model": model_info["model"],
@@ -74,7 +143,7 @@ class MoeLlm:
             "temperature": model_info.get("temperature"),
             "top_p": model_info.get("top_p"),
             "top_k": model_info.get("top_k"),
-            "stream": False,
+            "stream": model_info.get("stream"),
             # "tools": [
             #     {
             #         "type": "web_search",
@@ -83,7 +152,6 @@ class MoeLlm:
             # ],
         }
 
-        data = json.dumps(data)
 
         headers = {
             "Authorization": model_info["key"],
@@ -102,52 +170,29 @@ class MoeLlm:
                             f"api又卡了呐！第 {retry_times+1} 次尝试，请勿多次发送~",
                         )
                         await asyncio.sleep(2**retry_times)
-                    async with session.post(
-                        url=model_info["url"],
-                        data=data,
-                        headers=headers,
-                        ssl=False,
-                        proxy=model_info.get("proxy"),
-                    ) as resp:
-                        # 获取整个响应文本
-                        response = await resp.json()
-                        # 返回200
-                        if resp.status != 200 or not response:
-                            retry_times += 1
-                            logger.error(response)
-                            continue
-                    if choices := response.get("choices"):
-                        content = choices[0]["message"]["content"]
-                        start_tag = "<think>"
-                        end_tag = "</think>"
-                        start = content.find(start_tag)
-                        end = content.find(end_tag)
-                        if start == -1 and end != -1:
-                            end += len(end_tag)
-                            start = 0
-                            result = content[:start] + content[end:]
-                        elif start != -1 and end != -1:
-                            end += len(end_tag)
-                            result = content[:start] + content[end:]
-                        else:
-                            result = content
-                        if result.strip():
-                            break
-                        else:
-                            continue
+                    if model_info.get("stream"):
+                        result = await self.stream_llm_chat(
+                            session,
+                            model_info["url"],
+                            headers,
+                            data,
+                            model_info.get("proxy"),
+                        )
+                        return result
                     else:
-                        if response.get("code") == "DataInspectionFailed":
-                            messages_handler.clrear_messages()
-                            return "消息合法检查未通过，少说血腥、暴力、色情的话呐~"
-                        elif response.get("code") == 50501:
-                            retry_times += 1
-                            continue
-                        else:
-                            logger.error(response)
-                            return "bug了呐，赶快喊机器人主人来修一下吧~"
-                if not self.is_objective:
-                    messages_handler.post_process(result.strip())
-                return result.strip()
+                        data = json.dumps(data)
+                        result = await self.none_stream_llm_chat(
+                            session,
+                            model_info["url"],
+                            headers,
+                            data,
+                            model_info.get("proxy"),
+                        )
+                    if result:
+                        return result
+                    else:
+                        retry_times += 1
+                        continue
         except TimeoutError:
             return "网络超时呐，多半是api反应太慢（"
         except Exception:
