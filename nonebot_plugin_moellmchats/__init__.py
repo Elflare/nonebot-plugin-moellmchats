@@ -157,14 +157,10 @@ async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
     await model_matcher.finish(result)
 
 
-async def handle_llm(bot: Bot, event: GroupMessageEvent, matcher, is_ai=False):
+async def handle_llm(
+    bot: Bot, event: GroupMessageEvent, matcher, format_message_dict: dict, is_ai=False
+):
     # 获取消息文本
-    if event.message.extract_plain_text().strip():
-        format_message_dict = await format_message(event)
-    else:
-        await matcher.finish(
-            Message(random.choice(hello__reply))
-        )  # 没有就选一个卖萌回复
     user_id = event.sender.user_id
     if (
         # not model_selector.get_moe()  # 单模型加cd
@@ -206,7 +202,13 @@ llm_matcher = on_message(
 
 @llm_matcher.handle()
 async def _(bot: Bot, event: MessageEvent):
-    await handle_llm(bot, event, ai_matcher, is_ai=False)
+    if event.message.extract_plain_text().strip():
+        format_message_dict = await format_message(event)
+    else:
+        await llm_matcher.finish(
+            Message(random.choice(hello__reply))
+        )  # 没有就选一个卖萌回复
+    await handle_llm(bot, event, ai_matcher, format_message_dict, is_ai=False)
 
 
 if config_parser.get_config("fastai_enabled"):
@@ -219,7 +221,13 @@ if config_parser.get_config("fastai_enabled"):
 
     @ai_matcher.handle()
     async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
-        await handle_llm(bot, event, ai_matcher, is_ai=True)
+        if args.extract_plain_text().strip():
+            format_message_dict = await format_message(event)
+            await handle_llm(bot, event, ai_matcher, format_message_dict, is_ai=True)
+        else:
+            await ai_matcher.finish(
+                Message(random.choice(hello__reply))
+            )  # 没有就选一个卖萌回复
 
 
 # 优先级10，不会向下阻断，条件：戳一戳bot触发
