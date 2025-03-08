@@ -19,12 +19,12 @@ from .utils import (
     format_message,
 )
 from collections import defaultdict
+
+require("nonebot_plugin_localstore")
 from . import moe_llm as llm
 from .ModelSelector import model_selector
 from .TemperamentManager import temperament_manager
 from .Config import config_parser
-
-require("nonebot_plugin_localstore")
 
 
 __plugin_meta__ = PluginMetadata(
@@ -47,9 +47,7 @@ async def context_dict_func(bot: Bot, event: MessageEvent):
     if event.message.extract_plain_text().strip():  # 有文字才记录
         if message_dict := await format_message(event):
             sender_name = event.sender.card or event.sender.nickname
-            llm.context_dict[event.group_id].append(
-                f"{sender_name}:{''.join(message_dict['text'])}"
-            )
+            llm.context_dict[event.group_id].append(f"{sender_name}:{''.join(message_dict['text'])}")
         # 1%概率主动发
         # if random.randint(1, 100) == 1:
         #     glm = llm.Glm(
@@ -60,9 +58,7 @@ async def context_dict_func(bot: Bot, event: MessageEvent):
 
 
 # 性格切换
-temperament_switch_matcher = on_command(
-    "性格切换", aliases={"切换性格", "人格切换", "切换人格"}, priority=10, block=True
-)
+temperament_switch_matcher = on_command("性格切换", aliases={"切换性格", "人格切换", "切换人格"}, priority=10, block=True)
 
 
 @temperament_switch_matcher.handle()
@@ -73,18 +69,12 @@ async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
             if temperament_manager.set_temperament_dict(event.user_id, temp):
                 await temperament_switch_matcher.finish(f"已切换性格为{temp}")
             else:
-                await temperament_switch_matcher.finish(
-                    "出错了，搞快喊机器人主人来修复一下吧~"
-                )
-    await temperament_switch_matcher.finish(
-        f"只有{temperament_manager.get_temperaments_keys()}中的性格可以切换"
-    )
+                await temperament_switch_matcher.finish("出错了，搞快喊机器人主人来修复一下吧~")
+    await temperament_switch_matcher.finish(f"只有{temperament_manager.get_temperaments_keys()}中的性格可以切换")
 
 
 # 查看性格
-temperament_check_matcher = on_fullmatch(
-    ("查看性格", "查看人格"), priority=10, block=True
-)
+temperament_check_matcher = on_fullmatch(("查看性格", "查看人格"), priority=10, block=True)
 
 
 @temperament_check_matcher.handle()
@@ -126,9 +116,7 @@ async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
     await model_matcher.finish(result)
 
 
-set_web_search_matcher = on_command(
-    "设置联网", aliases={"切换联网"}, permission=SUPERUSER, priority=10, block=True
-)
+set_web_search_matcher = on_command("设置联网", aliases={"切换联网"}, permission=SUPERUSER, priority=10, block=True)
 
 
 @set_web_search_matcher.handle()
@@ -157,9 +145,7 @@ async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
     await model_matcher.finish(result)
 
 
-async def handle_llm(
-    bot: Bot, event: GroupMessageEvent, matcher, format_message_dict: dict, is_ai=False
-):
+async def handle_llm(bot: Bot, event: GroupMessageEvent, matcher, format_message_dict: dict, is_ai=False):
     # 获取消息文本
     user_id = event.sender.user_id
     if (
@@ -176,9 +162,7 @@ async def handle_llm(
             f"{sender_name}的llm对话cd中, 将会在{config_parser.get_config('cd_seconds') - (event.time-cd[user_id])}秒后自动回答，请不要重复提问~"
         )
         is_repeat_ask_dict[user_id] = True
-        await asyncio.sleep(
-            max(0, config_parser.get_config("cd_seconds") - (event.time - cd[user_id]))
-        )
+        await asyncio.sleep(max(0, config_parser.get_config("cd_seconds") - (event.time - cd[user_id])))
     cd[user_id] = event.time
     if is_ai:
         temp = "ai助手"
@@ -205,9 +189,7 @@ async def _(bot: Bot, event: MessageEvent):
     if event.message.extract_plain_text().strip():
         format_message_dict = await format_message(event)
     else:
-        await llm_matcher.finish(
-            Message(random.choice(hello__reply))
-        )  # 没有就选一个卖萌回复
+        await llm_matcher.finish(Message(random.choice(hello__reply)))  # 没有就选一个卖萌回复
     await handle_llm(bot, event, ai_matcher, format_message_dict, is_ai=False)
 
 
@@ -225,9 +207,7 @@ if config_parser.get_config("fastai_enabled"):
             format_message_dict = await format_message(event)
             await handle_llm(bot, event, ai_matcher, format_message_dict, is_ai=True)
         else:
-            await ai_matcher.finish(
-                Message(random.choice(hello__reply))
-            )  # 没有就选一个卖萌回复
+            await ai_matcher.finish(Message(random.choice(hello__reply)))  # 没有就选一个卖萌回复
 
 
 # 优先级10，不会向下阻断，条件：戳一戳bot触发
