@@ -58,7 +58,11 @@ async def format_message(event) -> dict[list, str]:
         elif msgseg.type == "face":
             pass
         elif msgseg.type == "text":
-            text_message.append(msgseg.data.get("text", ""))
+            if plain := msgseg.data.get("text", ""):
+                if plain.startswith("ai"):  # 判断ai开头
+                    text_message.append(plain[2:])
+                else:
+                    text_message.append(plain)
     return {"text": text_message, "reply": reply_text}
 
 
@@ -67,7 +71,9 @@ async def get_member_name(group: int, sender_id: int) -> str:  # 将QQ号转换�
     bot = nonebot.get_bot()
     for bot in nonebot.get_bots().values():
         try:
-            member_info = await bot.get_group_member_info(group_id=group, user_id=sender_id, no_cache=True)
+            member_info = await bot.get_group_member_info(
+                group_id=group, user_id=sender_id, no_cache=True
+            )
             name = member_info.get("card") or member_info.get("nickname")
             break
         except Exception:

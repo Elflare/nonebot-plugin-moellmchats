@@ -36,7 +36,7 @@ class MoeLlm:
         context_dict_ = list(context_dict[event.group_id])[:-1]
         self.prompt += "\n".join(context_dict_)
 
-    async def stream_llm_chat(self,session, url, headers, data, proxy)->str:
+    async def stream_llm_chat(self, session, url, headers, data, proxy) -> str:
         # 流式响应内容
         result = []
         async with session.post(
@@ -47,7 +47,7 @@ class MoeLlm:
                 # 异步迭代响应内容
                 async for line in response.content:
                     if line.startswith(b"data: [DONE]"):
-                        break  # 结束标记，退出循环
+                        break  # 结束标记，退出循环e.content:
                     if line and line.startswith(b"data:"):
                         json_data = json.loads(line[5:].decode("utf-8"))
                         if (
@@ -56,9 +56,12 @@ class MoeLlm:
                             .get("content", "")
                         ):
                             result.append(content)
-                return "".join(result)
+                result = "".join(result)
+                if not self.is_objective:
+                    self.messages_handler.post_process(result)
+                return result
             else:
-                logger.error(f"Error: {response.status}")
+                logger.error(f"Error: {response}")
                 return None
 
     async def none_stream_llm_chat(self, session, url, headers, data, proxy) -> str:
@@ -90,10 +93,6 @@ class MoeLlm:
                 result = content[:start] + content[end:]
             else:
                 result = content
-            if result.strip():
-                return result.strip()
-            else:
-                return None
         else:
             if response.get("code") == "DataInspectionFailed":
                 self.messages_handler.clrear_messages()
@@ -151,7 +150,6 @@ class MoeLlm:
             #     }
             # ],
         }
-
 
         headers = {
             "Authorization": model_info["key"],

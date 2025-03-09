@@ -48,13 +48,6 @@ async def context_dict_func(bot: Bot, event: MessageEvent):
         if message_dict := await format_message(event):
             sender_name = event.sender.card or event.sender.nickname
             llm.context_dict[event.group_id].append(f"{sender_name}:{''.join(message_dict['text'])}")
-        # 1%概率主动发
-        # if random.randint(1, 100) == 1:
-        #     glm = llm.Glm(
-        #         bot, event, context_dict, ["主动发送一条消息"], is_objective=True
-        #     )
-        #     reply = await glm.get_glm()
-        #     await message_matcher.finish(reply)
 
 
 # 性格切换
