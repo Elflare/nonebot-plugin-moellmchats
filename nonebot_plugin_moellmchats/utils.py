@@ -1,6 +1,5 @@
 import nonebot
 from nonebot.log import logger
-from async_lru import alru_cache
 
 Bot_NICKNAME: str = list(nonebot.get_driver().config.nickname)[0]  # bot的nickname
 
@@ -66,13 +65,11 @@ async def format_message(event) -> dict[list, str]:
     return {"text": text_message, "reply": reply_text}
 
 
-@alru_cache(maxsize=128)
 async def get_member_name(group: int, sender_id: int) -> str:  # 将QQ号转换成昵称
-    bot = nonebot.get_bot()
     for bot in nonebot.get_bots().values():
         try:
             member_info = await bot.get_group_member_info(
-                group_id=group, user_id=sender_id, no_cache=True
+                group_id=group, user_id=sender_id, no_cache=False
             )
             name = member_info.get("card") or member_info.get("nickname")
             break
