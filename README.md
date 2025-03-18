@@ -230,7 +230,7 @@ LOCALSTORE_USE_CWD=True #可选
 
 **一个ai驯服另一个ai的实录**
 
-> 红色打码为本插件，使用了qwq-32b模型
+> 橙色头像为本插件的bot，使用了qwq-32b模型
 
 ![一个ai驯服另一个ai的实录](./imgs/aivsai.jpg)
 
