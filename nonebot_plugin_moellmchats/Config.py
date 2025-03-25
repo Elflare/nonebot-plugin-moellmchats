@@ -22,6 +22,7 @@ class ConfigParser:
             config = {
                 "max_group_history": 10,
                 "max_user_history": 8,
+                "max_retry_times": 3,
                 "user_history_expire_seconds": 600,
                 "cd_seconds": 120,
                 "search_api": "your api",

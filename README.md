@@ -128,11 +128,11 @@ LOCALSTORE_USE_CWD=True #可选
 {
   max_group_history: 10, // 群组上下文最大长度
   max_user_history: 8, // 每个用户上下文最大长度
+  max_retry_times: 3, // 最大重试次数
   user_history_expire_seconds: 600, // 用户上下文过期时间
   cd_seconds: 0, // 每个用户冷却时间（秒）
   search_api: "Bearer your_tavily_key", //联网搜索tavily api key。开启搜索必填
   fastai_enabled: false, // 快速AI助手开关
-  max_retry_times: 3, // 最大重试次数
 }
 ```
 

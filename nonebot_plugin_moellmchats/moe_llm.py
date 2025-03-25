@@ -12,9 +12,7 @@ from .MessagesHandler import MessagesHandler
 from .Config import config_parser
 from .TemperamentManager import temperament_manager
 
-context_dict = defaultdict(
-    lambda: deque(maxlen=config_parser.get_config("max_group_history"))
-)
+context_dict = defaultdict(lambda: deque(maxlen=config_parser.get_config("max_group_history")))
 
 
 class MoeLlm:
@@ -39,9 +37,7 @@ class MoeLlm:
     async def stream_llm_chat(self, session, url, headers, data, proxy) -> str:
         # 流式响应内容
         result = []
-        async with session.post(
-            url, headers=headers, json=data, proxy=proxy
-        ) as response:
+        async with session.post(url, headers=headers, json=data, proxy=proxy) as response:
             # 确保响应是成功的
             if response.status == 200:
                 # 异步迭代响应内容
@@ -50,11 +46,7 @@ class MoeLlm:
                         break  # 结束标记，退出循环e.content:
                     if line and line.startswith(b"data:"):
                         json_data = json.loads(line[5:].decode("utf-8"))
-                        if (
-                            content := json_data.get("choices", [{}])[0]
-                            .get("delta", {})
-                            .get("content", "")
-                        ):
+                        if content := json_data.get("choices", [{}])[0].get("delta", {}).get("content", ""):
                             result.append(content)
                 result = "".join(result)
                 if not self.is_objective:
@@ -116,9 +108,7 @@ class MoeLlm:
             category_result = await category.get_category()
             if isinstance(category_result, tuple):  # 如果是tuple，则说明没有问题
                 difficulty, internet_required, key_word = category_result
-                logger.info(
-                    f"难度：{difficulty}, 是否联网：{internet_required}，搜索关键词：{key_word}"
-                )
+                logger.info(f"难度：{difficulty}, 是否联网：{internet_required}，搜索关键词：{key_word}")
                 # 判断是否联网
                 if internet_required and model_selector.get_web_search():
                     search = Search(key_word)
@@ -156,12 +146,10 @@ class MoeLlm:
             "Content-Type": "application/json",
         }
         try:
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=300)
-            ) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300)) as session:
                 retry_times = 0
                 result = "api寄！"
-                while retry_times < config_parser.get_config("max_retry_times"):
+                while retry_times < config_parser.get_config("max_retry_times", 3):
                     if retry_times > 0:
                         await self.bot.send(
                             self.event,
