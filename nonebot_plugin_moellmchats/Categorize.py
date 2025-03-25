@@ -64,6 +64,7 @@ internet_required: 布尔值，表示是否需要访问互联网或外部数据�
                         result["internet_required"],
                         result["key_word"],
                     )
+                try_times += 1
             except Exception:
                 logger.warning(traceback.format_exc())
                 try_times += 1
