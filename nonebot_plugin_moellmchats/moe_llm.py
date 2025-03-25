@@ -149,7 +149,12 @@ class MoeLlm:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300)) as session:
                 retry_times = 0
                 result = "api寄！"
-                while retry_times < config_parser.get_config("max_retry_times", 3):
+                max_retry_times = (
+                    config_parser.get_config("max_retry_times")
+                    if config_parser.get_config("max_retry_times")
+                    else 3
+                )
+                for retry_times in range(max_retry_times):
                     if retry_times > 0:
                         await self.bot.send(
                             self.event,
@@ -177,7 +182,6 @@ class MoeLlm:
                     if result:
                         return result
                     else:
-                        retry_times += 1
                         continue
         except TimeoutError:
             return "网络超时呐，多半是api反应太慢（"
