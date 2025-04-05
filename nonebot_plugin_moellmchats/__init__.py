@@ -183,14 +183,14 @@ async def _(bot: Bot, event: MessageEvent):
         format_message_dict = await format_message(event)
     else:
         await llm_matcher.finish(Message(random.choice(hello__reply)))  # 没有就选一个卖萌回复
-    await handle_llm(bot, event, ai_matcher, format_message_dict, is_ai=False)
+    await handle_llm(bot, event, llm_matcher, format_message_dict, is_ai=False)
 
 
 if config_parser.get_config("fastai_enabled"):
     ai_matcher = on_command(
         "ai",
         permission=GROUP,
-        priority=15,
+        priority=17,
         block=True,
     )
 
