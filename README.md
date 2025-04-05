@@ -168,14 +168,14 @@ LOCALSTORE_USE_CWD=True #可选
 
 ```json5
 {
-  use_moe: false, // 启用混合专家模式。若需开启联网搜索，则需开启此项
+  use_moe: false, // 启用混合专家模式。若开启联网搜索，则需开启此项
   moe_models: {
     // 问题难度分级模型映射
     "0": "dpsk-chat", // 简单问题
     "1": "dpsk-chat", // 中等问题
     "2": "dpsk-r1", // 复杂问题
   },
-  selected_model: "dpsk-r1", // 单一模式默认模型
+  selected_model: "dpsk-r1", // 不启用MoE时的模型。最好填写上，在难度分级失败时也会回滚至此模型
   category_model: "glm-4-flash", // 问题分类模型（建议用免费或较小的模型）
   use_web_search: false, // 启用网络搜索
 }
