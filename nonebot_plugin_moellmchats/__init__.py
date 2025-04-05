@@ -29,7 +29,7 @@ from .Config import config_parser
 
 __plugin_meta__ = PluginMetadata(
     name="MoEllm聊天",
-    description="感谢llm，机器人变聪明了",
+    description="感谢llm，机器人变聪明了\n✨ 混合专家模型调度LLM插件 | 混合调度·联网搜索·上下文优化·个性定制·Token节约 ✨",
     usage="""1.艾特或以bot的名字开头进行对话\n2.用"性格切换xx"来切换性格（每个性格设定绑定每个人账号，不共享）\n3.用"ai xx"来快速调用纯ai助手\n4.超级管理员限定：用切换模型、切换moe、设置moe、设置联网来设置""",
     type="application",
     homepage="https://github.com/Elflare/nonebot-plugin-moellmchats",
