@@ -131,7 +131,7 @@ LOCALSTORE_USE_CWD=True #可选
   max_retry_times: 3, // 最大重试次数
   user_history_expire_seconds: 600, // 用户上下文过期时间
   cd_seconds: 0, // 每个用户冷却时间（秒）
-  search_api: "Bearer your_tavily_key", //联网搜索tavily api key。开启搜索必填
+  search_api: "Bearer your_tavily_key", //联网搜索tavily api key。开启搜索必填，且开启MoE才能使用
   fastai_enabled: false, // 快速AI助手开关
 }
 ```
@@ -168,7 +168,7 @@ LOCALSTORE_USE_CWD=True #可选
 
 ```json5
 {
-  use_moe: false, // 启用混合专家模式
+  use_moe: false, // 启用混合专家模式。若需开启联网搜索，则需开启此项
   moe_models: {
     // 问题难度分级模型映射
     "0": "dpsk-chat", // 简单问题
