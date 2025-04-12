@@ -65,8 +65,10 @@ def get_emotions_names() -> list:
 # 获取具体表情包
 def get_emotion(emoji_name: str) -> MessageSegment:
     path = Path(config_parser.get_config("emotions_dir")) / emoji_name
-    emotion_image_list = path.glob("*")
-    image = path / choice(list(emotion_image_list))
+    emotion_image_list = list(path.glob("*"))
+    if not emotion_image_list:
+        return None
+    image = path / choice(emotion_image_list)
     try:
         with open(image, "rb") as f:
             img = f.read()

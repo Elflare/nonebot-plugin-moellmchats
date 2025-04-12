@@ -36,6 +36,7 @@ class ModelSelector:
                     "proxy": "http://127.0.0.1:7890",
                     "stream": True,
                     "is_segment": True,
+                    "max_segments": 5,
                 },
                 "dpsk-r1": {
                     "url": "https://api.deepseek.com/chat/completions",
