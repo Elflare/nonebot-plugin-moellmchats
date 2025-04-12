@@ -79,7 +79,7 @@ def get_emotion(emoji_name: str) -> MessageSegment:
 
 
 # 消息格式转换
-async def format_message(event) -> dict[list, str]:
+async def format_message(event, bot) -> dict[list, str]:
     text_message = []
     reply_text = ""
     if event.reply:
@@ -90,7 +90,7 @@ async def format_message(event) -> dict[list, str]:
         if msgseg.type == "at":
             qq = msgseg.data.get("qq")
             if qq != nonebot.get_bot().self_id:  # 排除at机器人
-                name = await get_member_name(event.group_id, qq)
+                name = await get_member_name(event.group_id, qq, bot)
                 text_message.append(name)
         elif msgseg.type == "image":
             text_message.append("[图片]")
@@ -105,16 +105,12 @@ async def format_message(event) -> dict[list, str]:
     return {"text": text_message, "reply": reply_text}
 
 
-async def get_member_name(group: int, sender_id: int) -> str:  # 将QQ号转换成昵称
-    for bot in nonebot.get_bots().values():
-        try:
-            member_info = await bot.get_group_member_info(
-                group_id=group, user_id=sender_id, no_cache=False
-            )
-            name = member_info.get("card") or member_info.get("nickname")
-            break
-        except Exception:
-            logger.warning("该机器人获取成员info失败，尝试下一个")
-    else:
-        name = sender_id
+async def get_member_name(group: int, sender_id: int, bot) -> str:  # 将QQ号转换成昵称
+    try:
+        member_info = await bot.get_group_member_info(
+            group_id=group, user_id=sender_id, no_cache=False
+        )
+        name = member_info.get("card") or member_info.get("nickname")
+    except Exception:
+        logger.warning("获取成员info失败")
     return str(name)
