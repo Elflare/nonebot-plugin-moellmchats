@@ -138,7 +138,7 @@ LOCALSTORE_USE_CWD=True #可选
   user_history_expire_seconds: 600, // 用户上下文过期时间
   cd_seconds: 0, // 每个用户冷却时间（秒）
   search_api: "Bearer your_tavily_key", //联网搜索tavily api key。开启搜索必填，且开启MoE才能使用
-  fastai_enabled: false, // 快速AI助手开关。方便快速调用纯AI助手，无角色扮演。调用快速AI助手时，不会分段发送也不会发表情包。调用方法下文提到。
+  fastai_enabled: false, // 快速AI助手开关。方便快速调用纯AI助手，无角色扮演。调用快速AI助手时，仅有用户上下文，不会有群聊上下文。不会分段发送也不会发表情包。调用方法下文提到。
   emotions_enabled: false, // 是否开启表情包（只有stream和is_segmemt为true才会发送表情包，模型设置中设置）
   emotion_rate: 0.1, // 发送表情包概率（0-1）（经测试 LLM 几乎每句都会发送表情包，所以手动设置概率）
   emotions_dir: "absolute path", // 表情包目录，绝对路径
@@ -259,7 +259,7 @@ your_absolute_path/
 
 **一个ai驯服另一个ai的实录**
 
-> 橙色头像为本插件的bot，使用了qwq-32b模型
+> 橙色头像为本插件的bot，使用了qwq-32b模型。（注：为了防止上下文干扰，新版的快速AI助手不再有群聊上下文，只保留用户上下文）
 
 ![一个ai驯服另一个ai的实录](./imgs/aivsai.jpg)
 
