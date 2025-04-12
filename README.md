@@ -176,7 +176,7 @@ your_absolute_path/
     "proxy": "http://127.0.0.1:7890",
     "stream": True, // 是否流式响应
     "is_segment": True, // 是否开启分段发送（只有stream为true才会生效）
-    "max_segments": 5, // 分段发送最大段数（开启分段发送后，为了防止无限刷屏，设置发送上限，超过后会直接停止发送）
+    "max_segments": 5, // 分段发送最大段数（开启分段发送后，为了防止刷屏，设置发送上限，超过后会直接停止发送）
   },
   "dpsk-r1": {
     "url": "https://api.deepseek.com/chat/completions",
