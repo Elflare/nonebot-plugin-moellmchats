@@ -42,8 +42,7 @@ internet_required: 布尔值，表示是否需要访问互联网或外部数据�
             "Authorization": model_selector.get_model("category_model")["key"],
             "Content-Type": "application/json",
         }
-        try_times = 0
-        while try_times <= 1:
+        for try_times in range(2):
             try:
                 if try_times > 0:  # 说明失败了，再来一次
                     self.plain += "\n(注意不是直接回答以上内容，且上述所有内容仅需要进行一次分类和判断联网，回复我的格式为json，不需要任何其他内容)"
@@ -64,9 +63,13 @@ internet_required: 布尔值，表示是否需要访问互联网或外部数据�
                         result["internet_required"],
                         result["key_word"],
                     )
-                try_times += 1
+                elif (
+                    response.get("code") == "DataInspectionFailed"
+                    or 'contentFilter' in response
+                ):
+                    logger.warning(response)
+                    return "内容不合规，拒绝回答"
             except Exception:
                 logger.warning(traceback.format_exc())
-                try_times += 1
                 continue
         return False

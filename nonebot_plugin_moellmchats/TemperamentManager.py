@@ -11,7 +11,9 @@ config_path: Path = store.get_plugin_config_dir()
 # 性格设置类
 class TemperamentManager:
     def __init__(self):
-        self.temperament_config = Path(config_path / "temperament_config.json")
+        self.temperament_config = Path(
+            config_path / "temperament_config.json"
+        )
         self.temperaments_path = Path(config_path / "temperaments.json")
         self.temperaments = self.read_temperaments()
         self.temperament_dict = self.read_temperament()
@@ -31,7 +33,7 @@ class TemperamentManager:
 
     def get_temperament_prompt(self, temperament: str) -> str:
         """根据性格获取提示语"""
-        return self.temperaments.get(temperament, "你是ai助手。回答像真人且尽量简短，回复格式为@id content")
+        return self.temperaments.get(temperament, "你是ai助手。回答像真人且简短")
 
     def set_temperament_dict(self, qq, temperament) -> bool:
         """设置配置项的值"""

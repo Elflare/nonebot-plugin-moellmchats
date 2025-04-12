@@ -27,6 +27,9 @@ class ConfigParser:
                 "cd_seconds": 120,
                 "search_api": "your api",
                 "fastai_enabled": False,
+                "emotions_enabled": False,
+                "emotion_rate": 0.1,
+                "emotions_dir": "absolute path",
             }
             with open(self.filepath, "w", encoding="utf-8") as file:
                 json.dump(config, file, indent=4, ensure_ascii=False)

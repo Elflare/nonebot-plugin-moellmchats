@@ -34,6 +34,8 @@ class ModelSelector:
                     "temperature": 1.5,
                     "max_tokens": 1024,
                     "proxy": "http://127.0.0.1:7890",
+                    "stream": True,
+                    "is_segment": True,
                 },
                 "dpsk-r1": {
                     "url": "https://api.deepseek.com/chat/completions",
@@ -105,6 +107,18 @@ class ModelSelector:
         self.model_config["use_web_search"] = is_web_search
         self._write_config(self.model_config_file, self.model_config)
         return "已开启联网搜索" if is_web_search else "已关闭联网搜索"
+
+    def set_summary_model(self, model_name: str) -> str:
+        # 设置单个模型，model_name为models.json中的键
+        if model_name not in self.models:
+            return f"只能是{list(self.models.keys())}中的模型"
+
+        # 设置selected_model
+        self.model_config["summary_model"] = model_name
+
+        # 更新配置文件
+        self._write_config(self.model_config_file, self.model_config)
+        return f"已切换总结模型为{model_name}的{self.models[model_name]['model']}"
 
     def set_chat_model(self, model_name: str) -> str:
         # 设置单个模型，model_name为models.json中的键

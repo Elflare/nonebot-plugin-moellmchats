@@ -2,7 +2,7 @@
 
 # nonebot-plugin-moellmchats
 
-✨ 混合专家模型调度LLM插件 | 混合调度·联网搜索·上下文优化·个性定制·Token节约 ✨
+✨ 混合专家模型调度LLM插件 | 混合调度·联网搜索·上下文优化·个性定制·Token节约·更加拟人 ✨
 
 <a href="./LICENSE"> <img src="https://img.shields.io/github/license/Elflare/nonebot-plugin-moellmchats.svg" alt="license"> </a> <a href="https://pypi.python.org/pypi/nonebot-plugin-moellmchats"> <img src="https://img.shields.io/pypi/v/nonebot-plugin-moellmchats.svg" alt="pypi"> </a> <img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="python"></div>
 
@@ -20,6 +20,7 @@
   - [指令表](#指令表)
   - [效果图](#效果图)
 - [🔄 处理流程](#-处理流程)
+- [更新日志](#更新日志)
 - [鸣谢](#鸣谢)
 
 ## 🚀 核心特性
@@ -47,6 +48,11 @@
   - 对话冷却时间
   - 请求队列管理
   - 请求失败自动重试
+
+- 更加拟人的回复风格：
+  - 分段发送回复
+  - 每段根据回复内容长度增加延迟
+  - 自定义发送表情包
 
 ## 📦 安装
 
@@ -132,15 +138,34 @@ LOCALSTORE_USE_CWD=True #可选
   user_history_expire_seconds: 600, // 用户上下文过期时间
   cd_seconds: 0, // 每个用户冷却时间（秒）
   search_api: "Bearer your_tavily_key", //联网搜索tavily api key。开启搜索必填，且开启MoE才能使用
-  fastai_enabled: false, // 快速AI助手开关
+  fastai_enabled: false, // 快速AI助手开关。方便快速调用纯AI助手，无角色扮演。调用快速AI助手时，不会分段发送也不会发表情包。调用方法下文提到。
+  emotions_enabled: false, // 是否开启表情包（只有stream和is_segmemt为true才会发送表情包，模型设置中设置）
+  emotion_rate: 0.1, // 发送表情包概率（0-1）（经测试 LLM 几乎每句都会发送表情包，所以手动设置概率）
+  emotions_dir: "absolute path", // 表情包目录，绝对路径
 }
 ```
+**表情包目录结构示例**:
+```plaintext
+your_absolute_path/
+├── smile/
+│   ├── smile1.jpg
+│   ├── smile2.png
+│   └── smile3.jpg
+├── 滑稽/
+│   ├── huaji001.png
+│   ├── huaji002.jpg
+│   └── huaji003.png
+└── 阴险/
+    ├── yinxian_a.jpg
+    ├── yinxian_b.png
+    └── yinxian_c.jpg
+```
+> **说明**: 每个文件夹为表情包名字（中英皆可），用于LLM识别，每张图片名字任意。系统自动读取文件夹名字，不需要手动在prompt中添加说明。
 
 #### 模型管理 `models.json`(手动维护)<br>
-
 ⚠️**必填**。其中**url、model、key**必填，其他可省略。只能手动修改，重启生效。
 
-```json
+```json5
 {
   "dpsk-chat": {
     "url": "https://api.deepseek.com/chat/completions",
@@ -148,13 +173,15 @@ LOCALSTORE_USE_CWD=True #可选
     "model": "deepseek-chat",
     "temperature": 1.5,
     "max_tokens": 1024,
-    "proxy": "http://127.0.0.1:7890"
+    "proxy": "http://127.0.0.1:7890",
+    "stream": True, // 是否流式响应
+    "is_segment": True // 是否开启分段发送（只有stream为true才会生效）
   },
   "dpsk-r1": {
     "url": "https://api.deepseek.com/chat/completions",
     "key": "Bearer xxxx",
     "model": "deepseek-reasoner",
-    "stream": true,
+    "stream": false,
     "top_k": 5,
     "top_p": 1.0
   }
@@ -187,9 +214,9 @@ LOCALSTORE_USE_CWD=True #可选
 
 ```json5
 {
-  默认: "你是ai助手。回答像真人且尽量简短，回复格式为@id content", //性格默认值，可以不填，但是最好填上，没设置过性格的群友默认调用该性格
-  ai助手: "你是ai助手。回复格式为@id content", // ai助手，若开启快速调用纯ai助手，则需要填写
-  雌小鬼: "你是一个雌小鬼",
+  "默认": "你是ai助手。回答像真人且尽量简短，回复格式为@id content", //性格默认值，可以不填，但是最好填上，没设置过性格的群友默认调用该性格
+  "ai助手": "你是ai助手。回复格式为@id content", // ai助手，若开启快速调用纯ai助手，则需要填写
+  "艾拉": "你是《可塑性记忆》中的角色“艾拉”，不怎么表现出感情的少女型Giftia。性格傲娇，当听到不想听的话语时，会说：'ERROR，没听清楚'。回答尽量简短"
 }
 ```
 
@@ -223,9 +250,11 @@ LOCALSTORE_USE_CWD=True #可选
 ### 效果图
 
 **冷却与队列**
+
 ![冷却与队列](./imgs/cd.png)
 
 **联网搜索**
+
 ![联网搜索](./imgs/search.png)
 
 **一个ai驯服另一个ai的实录**
@@ -233,6 +262,10 @@ LOCALSTORE_USE_CWD=True #可选
 > 橙色头像为本插件的bot，使用了qwq-32b模型
 
 ![一个ai驯服另一个ai的实录](./imgs/aivsai.jpg)
+
+**分段发送与表情包**
+
+![分段发送与表情包](./imgs/segment_and_emotion.jpg)
 
 ## 🔄 处理流程
 
@@ -280,6 +313,11 @@ graph TD
 
 4. Token消耗降低
    - 大致可降低API调用失败率78%，Token浪费减少63%，同时保障高并发场景下的系统稳定性。
+
+## 更新日志
+### 2025-04-12
+- **新增**：支持分段发送与表情包
+- 修复一些bug，优化性能和提升容错
 
 ## 鸣谢
 

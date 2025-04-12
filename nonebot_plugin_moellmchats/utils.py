@@ -1,5 +1,12 @@
 import nonebot
 from nonebot.log import logger
+from .Config import config_parser
+from random import choice
+from pathlib import Path
+from os import listdir
+from nonebot.adapters.onebot.v11 import MessageSegment
+from traceback import format_exc
+import re
 
 Bot_NICKNAME: str = list(nonebot.get_driver().config.nickname)[0]  # bot的nickname
 
@@ -36,6 +43,37 @@ poke__reply = [
     "啊呜 ~ ",
     "呼喵 ~ 叫可爱的咱有什么事嘛OvO",
 ]
+
+
+# 表情包解析
+def parse_emotion(text: str) -> tuple:
+    # 使用正则表达式匹配方括号内的内容
+    pattern = r"\[(.*?)\]"
+    # 提取所有表情包名字
+    names = re.findall(pattern, text)
+    # 替换所有匹配项为[表情包名字]
+    replaced_text = re.sub(pattern, "", text)
+    return replaced_text, names
+
+
+# 获取表情包名字列表
+def get_emotions_names() -> list:
+    emotions_names = listdir(config_parser.get_config("emotions_dir"))
+    return emotions_names
+
+
+# 获取具体表情包
+def get_emotion(emoji_name: str) -> MessageSegment:
+    path = Path(config_parser.get_config("emotions_dir")) / emoji_name
+    emotion_image_list = path.glob("*")
+    image = path / choice(list(emotion_image_list))
+    try:
+        with open(image, "rb") as f:
+            img = f.read()
+            return MessageSegment.image(img)
+    except OSError:
+        logger.warning(format_exc())
+        return None
 
 
 # 消息格式转换
