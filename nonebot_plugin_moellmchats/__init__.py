@@ -13,14 +13,13 @@ from nonebot.adapters.onebot.v11 import (
     Bot,
 )
 import random
+require("nonebot_plugin_localstore")
 from .utils import (
     hello__reply,
     poke__reply,
     format_message,
 )
 from collections import defaultdict
-
-require("nonebot_plugin_localstore")
 from . import moe_llm as llm
 from .ModelSelector import model_selector
 from .TemperamentManager import temperament_manager
