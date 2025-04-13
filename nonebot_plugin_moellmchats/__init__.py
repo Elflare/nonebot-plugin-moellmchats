@@ -188,10 +188,12 @@ async def handle_llm(
             await matcher.finish("出错了，赶快喊机器人主人来修复一下吧~")
     llm_chat = llm.MoeLlm(bot, event, format_message_dict, temperament=temp)
     is_finished = await llm_chat.get_llm_chat()
-    is_repeat_ask_dict[user_id] = False
-    if not is_finished:  # 失败后cd回滚
+    is_repeat_ask_dict[user_id] = False  # 重复提问判定就不用了
+    if isinstance(is_finished, str):  # 表示失败，失败描述文字
         cd[user_id] = 0
-        # await matcher.finish(reply)
+        await matcher.finish(is_finished)
+    elif not is_finished:  # 失败后cd回1
+        cd[user_id] = 0
 
 
 llm_matcher = on_message(

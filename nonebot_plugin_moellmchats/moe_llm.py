@@ -35,13 +35,15 @@ class MoeLlm:
         self.is_objective = is_objective
         self.temperament = temperament
         self.model_info = None
+        self.emotion_flag = False  # 判断本次对话是否发送表情包
         self.prompt = f"{temperament_manager.get_temperament_prompt(temperament)}。我的id是{ event.sender.card or event.sender.nickname}"
         if temperament != "ai助手":  # 不为ai助手才加上下文
             # 表情包
             if config_parser.get_config(
                 "emotions_enabled"
             ) and random.random() < config_parser.get_config("emotion_rate"):
-                emotion_prompt = f"。回复时根据回答内容，有合适表情包时可以发送表情包，格式为中括号+表情包名字，如：[表情包名字]。可选表情有{get_emotions_names()}"
+                self.emotion_flag = True
+                emotion_prompt = f"。回复时根据回答内容，发送表情包，每次回复最多发一个表情包，格式为中括号+表情包名字，如：[表情包名字]。可选表情有{get_emotions_names()}"
             else:
                 emotion_prompt = ""
             self.prompt += f"。现在你在一个qq群中,你只需回复我{emotion_prompt}。群里近期聊天内容，冒号前面是id，后面是内容：\n"
@@ -51,7 +53,7 @@ class MoeLlm:
 
     # 处理和发送表情包
     async def send_emotion_message(self, content: str) -> str:
-        if config_parser.get_config("emotions_enabled"):  # 开启表情包
+        if self.emotion_flag:  # 本次对话发送表情包
             content, emotion_names_list = parse_emotion(content)
             if content:
                 await self.bot.send(self.event, content)
@@ -59,7 +61,7 @@ class MoeLlm:
                 # 发送
                 if emotion := get_emotion(emotion_name):
                     await self.bot.send(self.event, emotion)
-        else:  # 没开启表情包就直接发送
+        else:  # 默认直接发送
             await self.bot.send(self.event, content)
         return content
 
@@ -157,7 +159,7 @@ class MoeLlm:
                     return None  # 前面有，最后一句没回复
             else:
                 logger.error(f"Error: {response}")
-        return "出错了，赶快喊机器人主人来修复一下吧~"
+        return "bug了呐，赶快叫机器人主人来修下吧~"
 
     async def none_stream_llm_chat(self, session, url, headers, data, proxy) -> bool:
         async with session.post(
@@ -242,7 +244,6 @@ class MoeLlm:
             "max_tokens": self.model_info.get("max_tokens"),
             "temperature": self.model_info.get("temperature"),
             "top_p": self.model_info.get("top_p"),
-            "top_k": self.model_info.get("top_k"),
             "stream": self.model_info.get("stream", False),
             # "tools": [
             #     {
@@ -251,6 +252,9 @@ class MoeLlm:
             #     }
             # ],
         }
+        # 有的模型没有top_k
+        if self.model_info.get("top_k"):
+            data["top_k"] = self.model_info.get("top_k")
 
         headers = {
             "Authorization": self.model_info["key"],
