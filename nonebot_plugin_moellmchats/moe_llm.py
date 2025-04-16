@@ -43,7 +43,7 @@ class MoeLlm:
                 "emotions_enabled"
             ) and random.random() < config_parser.get_config("emotion_rate"):
                 self.emotion_flag = True
-                emotion_prompt = f"。回复时根据回答内容，发送表情包，每次回复最多发一个表情包，格式为中括号+表情包名字，如：[表情包名字]。可选表情有{get_emotions_names()}"
+                emotion_prompt = f"。回复时根据回答内容，发送表情包，每次回复最多发一个表情包，格式为中括号+表情包名字，如：[表情包名字]。可选表情仅有{get_emotions_names()}"
             else:
                 emotion_prompt = ""
             self.prompt += f"。现在你在一个qq群中,你只需回复我{emotion_prompt}。群里近期聊天内容，冒号前面是id，后面是内容：\n"
@@ -156,10 +156,10 @@ class MoeLlm:
                     await self.send_emotion_message(result)
                     return True
                 elif is_second_send:
-                    return None  # 前面有，最后一句没回复
+                    return True  # 前面有，最后一句没回复，也当回完了
             else:
                 logger.error(f"Error: {response}")
-        return "bug了呐，赶快叫机器人主人来修下吧~"
+        return False
 
     async def none_stream_llm_chat(self, session, url, headers, data, proxy) -> bool:
         async with session.post(
@@ -174,7 +174,7 @@ class MoeLlm:
             # 返回200
             if resp.status != 200 or not response:
                 logger.error(response)
-                return None
+                return False
         if choices := response.get("choices"):
             content = choices[0]["message"]["content"]
             start_tag = "<think>"
@@ -191,14 +191,8 @@ class MoeLlm:
             else:
                 result = content
         else:
-            if response.get("code") == "DataInspectionFailed":
-                self.messages_handler.clrear_messages()
-                return "消息合法检查未通过，少说血腥、暴力、色情的话呐~"
-            elif response.get("code") == 50501:
-                return None
-            else:
-                logger.error(response)
-                return "bug了呐，赶快喊机器人主人来修一下吧~"
+            logger.error(response)
+            return False
         if not self.is_objective:
             self.messages_handler.post_process(result.strip())
         self.bot.send(self.event, result.strip())
@@ -286,7 +280,6 @@ class MoeLlm:
                             self.model_info.get("proxy"),
                             self.model_info.get("is_segment"),
                         )
-                        return result
                     else:
                         data = json.dumps(data)
                         result = await self.none_stream_llm_chat(
@@ -297,12 +290,12 @@ class MoeLlm:
                             self.model_info.get("proxy"),
                         )
                     if result:
-                        return result
-                    else:
+                        return result  # 正常返回从这里
+                    else:  # 出错
                         continue
         except TimeoutError:
             return "网络超时呐，多半是api反应太慢（"
         except Exception:
             logger.error(str(send_message_list))
             traceback.print_exc()
-            return "日常抽风呐！当然也有可能是请求太快了，慢点吧~"
+        return "日常抽风呐！当然也有可能是请求太快了，慢点"
