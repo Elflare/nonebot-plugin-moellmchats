@@ -258,12 +258,12 @@ class MoeLlm:
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=300)
             ) as session:
-                result = "api寄！"
                 max_retry_times = (
                     config_parser.get_config("max_retry_times")
                     if config_parser.get_config("max_retry_times")
                     else 3
                 )
+                result = ""
                 for retry_times in range(max_retry_times):
                     if retry_times > 0:
                         await self.bot.send(
@@ -298,4 +298,4 @@ class MoeLlm:
         except Exception:
             logger.error(str(send_message_list))
             traceback.print_exc()
-        return "日常抽风呐！当然也有可能是请求太快了，慢点"
+        return "api寄！"
