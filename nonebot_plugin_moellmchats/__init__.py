@@ -50,13 +50,11 @@ async def context_dict_func(bot: Bot, event: MessageEvent):
             llm.context_dict[event.group_id].append(
                 f"{sender_name}:{''.join(message_dict['text'])}"
             )
-        # 1%概率主动发
+        # 概率主动发
         # if random.randint(1, 100) == 1:
-        #     glm = llm.Glm(
-        #         bot, event, context_dict, ["主动发送一条消息"], is_objective=True
-        #     )
-        #     reply = await glm.get_glm()
-        #     await message_matcher.finish(reply)
+        #     llm = llm.MoeLlm(
+        # bot, event, message_dict,is_objective=True, temperament='默认')
+        #     reply = await llm.handle_llm()
 
 
 # 性格切换

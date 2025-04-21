@@ -51,8 +51,10 @@ class MoeLlm:
             context_dict_ = list(context_dict[event.group_id])[:-1]
             self.prompt += "\n".join(context_dict_)
 
-    # 处理和发送表情包
     async def send_emotion_message(self, content: str) -> str:
+        """处理和发送表情包
+        Returns: str: 替换表情之后的内容
+        """
         if self.emotion_flag:  # 本次对话发送表情包
             content, emotion_names_list = parse_emotion(content)
             if content:
@@ -144,18 +146,20 @@ class MoeLlm:
                     result = "".join(buffer)
                 else:
                     result = "".join(buffer) + punctuation_buffer
-                if not self.is_objective:
-                    self.messages_handler.post_process(
-                        "".join(assistant_result) + result
-                    )
                 if is_second_send:
                     await asyncio.sleep(2 + len(current_content) / 3)
                 else:
                     is_second_send = True
                 if result := result.strip():
-                    await self.send_emotion_message(result)
+                    result = await self.send_emotion_message(result)
+                    if not self.is_objective:
+                        self.messages_handler.post_process(
+                            "".join(assistant_result) + result
+                        )
                     return True
                 elif is_second_send:
+                    if not self.is_objective:
+                        self.messages_handler.post_process("".join(assistant_result))
                     return True  # 前面有，最后一句没回复，也当回完了
             else:
                 logger.error(f"Error: {response}")
@@ -254,23 +258,23 @@ class MoeLlm:
             "Authorization": self.model_info["key"],
             "Content-Type": "application/json",
         }
-        try:
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=300)
-            ) as session:
-                max_retry_times = (
-                    config_parser.get_config("max_retry_times")
-                    if config_parser.get_config("max_retry_times")
-                    else 3
-                )
-                result = ""
-                for retry_times in range(max_retry_times):
-                    if retry_times > 0:
-                        await self.bot.send(
-                            self.event,
-                            f"api又卡了呐！第 {retry_times+1} 次尝试，请勿多次发送~",
-                        )
-                        await asyncio.sleep(2**retry_times)
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=300)
+        ) as session:
+            max_retry_times = (
+                config_parser.get_config("max_retry_times")
+                if config_parser.get_config("max_retry_times")
+                else 3
+            )
+            result = ""
+            for retry_times in range(max_retry_times):
+                if retry_times > 0:
+                    await self.bot.send(
+                        self.event,
+                        f"api又卡了呐！第 {retry_times+1} 次尝试，请勿多次发送~",
+                    )
+                    await asyncio.sleep(2**retry_times)
+                try:
                     if self.model_info.get("stream"):
                         result = await self.stream_llm_chat(
                             session,
@@ -293,9 +297,10 @@ class MoeLlm:
                         return result  # 正常返回从这里
                     else:  # 出错
                         continue
-        except TimeoutError:
-            return "网络超时呐，多半是api反应太慢（"
-        except Exception:
-            logger.error(str(send_message_list))
-            traceback.print_exc()
-        return "api寄！"
+                except TimeoutError:
+                    return "网络超时呐，多半是api反应太慢（"
+                except Exception:
+                    logger.warning(str(send_message_list))
+                    traceback.print_exc()
+                    continue
+            return "api寄！"
