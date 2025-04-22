@@ -199,7 +199,7 @@ class MoeLlm:
             return False
         if not self.is_objective:
             self.messages_handler.post_process(result.strip())
-        self.bot.send(self.event, result.strip())
+        await self.bot.send(self.event, result.strip())
         return True
 
     async def get_llm_chat(self) -> str:

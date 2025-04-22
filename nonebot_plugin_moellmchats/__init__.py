@@ -197,7 +197,7 @@ async def handle_llm(
 llm_matcher = on_message(
     rule=to_me(),
     permission=GROUP,
-    priority=15,
+    priority=99,
     block=True,
 )
 
