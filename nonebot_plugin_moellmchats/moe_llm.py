@@ -37,19 +37,6 @@ class MoeLlm:
         self.model_info = None
         self.emotion_flag = False  # 判断本次对话是否发送表情包
         self.prompt = f"{temperament_manager.get_temperament_prompt(temperament)}。我的id是{ event.sender.card or event.sender.nickname}"
-        if temperament != "ai助手":  # 不为ai助手才加上下文
-            # 表情包
-            if config_parser.get_config(
-                "emotions_enabled"
-            ) and random.random() < config_parser.get_config("emotion_rate"):
-                self.emotion_flag = True
-                emotion_prompt = f"。回复时根据回答内容，发送表情包，每次回复最多发一个表情包，格式为中括号+表情包名字，如：[表情包名字]。可选表情仅有{get_emotions_names()}"
-            else:
-                emotion_prompt = ""
-            self.prompt += f"。现在你在一个qq群中,你只需回复我{emotion_prompt}。群里近期聊天内容，冒号前面是id，后面是内容：\n"
-            # 去除群聊最新的对话，因为在用户的上下文中
-            context_dict_ = list(context_dict[event.group_id])[:-1]
-            self.prompt += "\n".join(context_dict_)
 
     async def send_emotion_message(self, content: str) -> str:
         """处理和发送表情包
@@ -202,6 +189,25 @@ class MoeLlm:
         await self.bot.send(self.event, result.strip())
         return True
 
+    def prompt_handler(self):
+        """处理system prompt，表情包和上下文相关"""
+        if self.temperament != "ai助手":  # 不为ai助手才加上下文
+            # 表情包
+            if (
+                config_parser.get_config("emotions_enabled")
+                and self.model_info.get("is_segment")
+                and self.model_info.get("stream")
+                and random.random() < config_parser.get_config("emotion_rate")
+            ):
+                self.emotion_flag = True
+                emotion_prompt = f"。回复时根据回答内容，发送表情包，每次回复最多发一个表情包，格式为中括号+表情包名字，如：[表情包名字]。可选表情仅有{get_emotions_names()}"
+            else:
+                emotion_prompt = ""
+            self.prompt += f"。现在你在一个qq群中,你只需回复我{emotion_prompt}。群里近期聊天内容，冒号前面是id，后面是内容：\n"
+            # 去除群聊最新的对话，因为在用户的上下文中
+            context_dict_ = list(context_dict[self.event.group_id])[:-1]
+            self.prompt += "\n".join(context_dict_)
+
     async def get_llm_chat(self) -> str:
         self.messages_handler = MessagesHandler(self.user_id)
         plain = self.messages_handler.pre_process(self.format_message_dict)
@@ -234,6 +240,8 @@ class MoeLlm:
         if not self.model_info:  # 分类失败或者不是用的moe
             self.model_info = model_selector.get_model("selected_model")
         logger.info(f"模型选择为：{self.model_info['model']}")
+        # 处理system prompt，表情包和上下文相关
+        self.prompt_handler()
         send_message_list = self.messages_handler.get_send_message_list()
         send_message_list.insert(0, {"role": "system", "content": self.prompt})
         data = {

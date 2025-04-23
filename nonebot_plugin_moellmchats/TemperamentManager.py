@@ -58,10 +58,10 @@ class TemperamentManager:
 
     # 读取文件
     def read_temperaments(self) -> str:
+        prompt = "你是ai助手。回答像真人且简短"
         if not self.temperaments_path.exists():
             self.temperaments_path.parent.mkdir(parents=True, exist_ok=True)
             self.temperaments_path.touch()
-            prompt = "你是ai助手。回答像真人且简短"
             with open(self.temperaments_path, "w", encoding="utf-8") as f:
                 json.dump({"默认": prompt}, f, ensure_ascii=False, indent=4)
             return prompt
