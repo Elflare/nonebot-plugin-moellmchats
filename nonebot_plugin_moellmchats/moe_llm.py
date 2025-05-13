@@ -200,7 +200,7 @@ class MoeLlm:
                 and random.random() < config_parser.get_config("emotion_rate")
             ):
                 self.emotion_flag = True
-                emotion_prompt = f"。回复时根据回答内容，发送表情包，每次回复最多发一个表情包，格式为中括号+表情包名字，如：[表情包名字]。可选表情仅有{get_emotions_names()}"
+                emotion_prompt = f"。回复时根据回答内容，发送表情包，每次回复最多发一个表情包，格式为中括号+表情包名字，如：[表情包名字]。可选表情有{get_emotions_names()}"
             else:
                 emotion_prompt = ""
             self.prompt += f"。现在你在一个qq群中,你只需回复我{emotion_prompt}。群里近期聊天内容，冒号前面是id，后面是内容：\n"
@@ -225,7 +225,7 @@ class MoeLlm:
                 # 判断是否联网
                 if internet_required and model_selector.get_web_search():
                     search = Search(key_word)
-                    await self.bot.send(self.event, "正在搜索，请稍等...")
+                    await self.bot.send(self.event, "検索中...検索中...=￣ω￣=")
                     if search_result := await search.get_search():
                         self.messages_handler.search_message_handler(search_result)
                     elif isinstance(search_result, bool):
@@ -246,6 +246,7 @@ class MoeLlm:
         send_message_list.insert(0, {"role": "system", "content": self.prompt})
         data = {
             "model": self.model_info["model"],
+            "reasoning_effort": "none",
             "messages": send_message_list,
             "max_tokens": self.model_info.get("max_tokens"),
             "temperature": self.model_info.get("temperature"),

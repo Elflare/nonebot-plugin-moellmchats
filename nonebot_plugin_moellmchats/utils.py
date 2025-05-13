@@ -112,5 +112,6 @@ async def get_member_name(group: int, sender_id: int, bot) -> str:  # 将QQ号�
         )
         name = member_info.get("card") or member_info.get("nickname")
     except Exception:
+        name = sender_id
         logger.warning("获取成员info失败")
     return str(name)
