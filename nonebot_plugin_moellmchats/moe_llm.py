@@ -83,7 +83,7 @@ class MoeLlm:
                         decoded = line[5:].decode("utf-8")
                     elif line.startswith(b""):
                         decoded = line.decode("utf-8")
-                    if not decoded.strip():
+                    if not decoded.strip() or decoded.startswith(":"):
                         continue
                     json_data = json.loads(decoded)
                     if message := json_data.get("choices", [{}])[0].get("message", {}):
@@ -246,7 +246,7 @@ class MoeLlm:
         send_message_list.insert(0, {"role": "system", "content": self.prompt})
         data = {
             "model": self.model_info["model"],
-            "reasoning_effort": "none",
+            # "reasoning_effort": "none",
             "messages": send_message_list,
             "max_tokens": self.model_info.get("max_tokens"),
             "temperature": self.model_info.get("temperature"),
