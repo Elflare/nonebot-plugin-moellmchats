@@ -282,7 +282,7 @@ class MoeLlm:
                         self.event,
                         f"api又卡了呐！第 {retry_times+1} 次尝试，请勿多次发送~",
                     )
-                    await asyncio.sleep(2**retry_times)
+                    await asyncio.sleep(2**(retry_times+1))
                 try:
                     if self.model_info.get("stream"):
                         result = await self.stream_llm_chat(
