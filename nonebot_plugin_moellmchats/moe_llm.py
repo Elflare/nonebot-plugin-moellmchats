@@ -266,6 +266,7 @@ class MoeLlm:
         headers = {
             "Authorization": self.model_info["key"],
             "Content-Type": "application/json",
+            "Accept-Encoding": "identity",
         }
         async with aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=300)

@@ -41,6 +41,7 @@ internet_required: 布尔值，表示是否需要访问互联网或外部数据�
         headers = {
             "Authorization": model_selector.get_model("category_model")["key"],
             "Content-Type": "application/json",
+            "Accept-Encoding": "identity",
         }
         for try_times in range(2):
             try:
