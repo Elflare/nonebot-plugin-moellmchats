@@ -13,6 +13,7 @@ class Search:
         headers = {
             "Content-Type": "application/json",
             "Authorization": config_parser.get_config("search_api"),
+            "Accept-Encoding": "identity",
         }
         data = {
             "query": self.plain,
