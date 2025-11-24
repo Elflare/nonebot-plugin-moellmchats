@@ -86,7 +86,15 @@ async def format_message(event, bot) -> dict:
 
     # 1. 处理回复消息中的图片 (使用你提供的逻辑)
     if reply := event.reply:
-        reply_text = event.reply.message.extract_plain_text().strip()
+        # 手动遍历回复内容，保留 [图片] 占位符
+        reply_segments = []
+        for seg in event.reply.message:
+            if seg.type == "text":
+                reply_segments.append(seg.data.get("text", ""))
+            elif seg.type == "image":
+                reply_segments.append("[图片]")
+            # 可以在这里加 elif seg.type == "face": 处理表情等其他类型
+        reply_text = "".join(reply_segments).strip()
         text_message.append(
             f"[回复 {event.reply.sender.card or event.reply.sender.nickname} 的消息 [{reply_text}]]"
         )
