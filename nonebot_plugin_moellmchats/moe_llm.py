@@ -54,6 +54,27 @@ class MoeLlm:
             await self.bot.send(self.event, content)
         return content
 
+    async def _check_400_error(self, response) -> str:
+        """检查是否为400错误及敏感内容拦截，返回错误提示或None"""
+        if response.status == 400:
+            error_content = await response.text()
+            logger.warning(f"API请求400错误: {error_content}")
+
+            sensitive_keywords = [
+                "DataInspectionFailed",  # 阿里
+                "content_filter",  # OpenAI/Azure
+                "sensitive",
+                "safety",
+                "violation",
+                "audit",
+                "prohibited",
+            ]
+
+            if any(k.lower() in error_content.lower() for k in sensitive_keywords):
+                return "图片或内容可能包含敏感信息，被AI审核拦截了喵 >_<"
+            return "API请求被拒绝 (400)，请检查后台日志。"
+        return None
+
     async def stream_llm_chat(
         self, session, url, headers, data, proxy, is_segment=False
     ) -> bool:
@@ -65,6 +86,8 @@ class MoeLlm:
         async with session.post(
             url, headers=headers, json=data, proxy=proxy
         ) as response:
+            if error_msg := await self._check_400_error(response):
+                return error_msg
             # 确保响应是成功的
             if response.status == 200:
                 # 异步迭代响应内容
@@ -165,6 +188,8 @@ class MoeLlm:
             ssl=False,
             proxy=proxy,
         ) as resp:
+            if error_msg := await self._check_400_error(resp):
+                return error_msg
             # 获取整个响应文本
             response = await resp.json()
             # 返回200
