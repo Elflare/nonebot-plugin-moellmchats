@@ -86,6 +86,11 @@ class MoeLlm:
                     if not decoded.strip() or decoded.startswith(":"):
                         continue
                     json_data = json.loads(decoded)
+                    content = ""
+                    # 以此尝试获取完整消息或流式增量
+                    choices = json_data.get("choices", [{}])
+                    if not choices:  # 防止choices为空列表的情况
+                        continue
                     if message := json_data.get("choices", [{}])[0].get("message", {}):
                         content = message.get("content", "")
                     elif message := json_data.get("choices", [{}])[0].get("delta", {}):
