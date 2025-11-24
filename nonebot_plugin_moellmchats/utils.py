@@ -4,7 +4,7 @@ from .Config import config_parser
 from random import choice
 from pathlib import Path
 from os import listdir
-from nonebot.adapters.onebot.v11 import MessageSegment
+from nonebot.adapters.onebot.v11 import MessageSegment, Message
 from traceback import format_exc
 import re
 
@@ -79,30 +79,60 @@ def get_emotion(emoji_name: str) -> MessageSegment:
 
 
 # 消息格式转换
-async def format_message(event, bot) -> dict[list, str]:
+async def format_message(event, bot) -> dict:
     text_message = []
     reply_text = ""
-    if event.reply:
+    image_urls = []  # 新增：用于存储提取到的图片URL
+
+    # 1. 处理回复消息中的图片 (使用你提供的逻辑)
+    if reply := event.reply:
         reply_text = event.reply.message.extract_plain_text().strip()
-        reply = f"[回复 {event.reply.sender.card or event.reply.sender.nickname} 的消息 [{reply_text}]]"
-        text_message.append(reply)
+        text_message.append(
+            f"[回复 {event.reply.sender.card or event.reply.sender.nickname} 的消息 [{reply_text}]]"
+        )
+
+        try:
+            # 获取原消息详情以提取图片
+            quoted_message = await bot.get_msg(message_id=reply.message_id)
+            message_list = quoted_message["message"]
+            if isinstance(message_list, str):  # gocq是str
+                message_image = Message(message_list)
+                # 查找是否有图片段
+                for seg in message_image:
+                    if seg.type == "image":
+                        if url := seg.data.get("url"):
+                            image_urls.append(url)
+            else:  # shamrock是list
+                for message in message_list:
+                    if message.get("type") == "image":
+                        if url := message.get("data").get("url"):
+                            image_urls.append(url)
+        except Exception:
+            logger.warning("获取回复消息图片失败")
+
+    # 2. 处理当前消息
     for msgseg in event.get_message():
         if msgseg.type == "at":
             qq = msgseg.data.get("qq")
-            if qq != nonebot.get_bot().self_id:  # 排除at机器人
+            if qq != nonebot.get_bot().self_id:
                 name = await get_member_name(event.group_id, qq, bot)
                 text_message.append(name)
         elif msgseg.type == "image":
             text_message.append("[图片]")
+            # 新增：提取当前消息的图片URL
+            if url := msgseg.data.get("url"):
+                image_urls.append(url)
         elif msgseg.type == "face":
             pass
         elif msgseg.type == "text":
             if plain := msgseg.data.get("text", ""):
-                if plain.startswith("ai"):  # 判断ai开头
+                if plain.startswith("ai"):
                     text_message.append(plain[2:])
                 else:
                     text_message.append(plain)
-    return {"text": text_message, "reply": reply_text}
+
+    # 返回字典中增加 images 字段
+    return {"text": text_message, "reply": reply_text, "images": image_urls}
 
 
 async def get_member_name(group: int, sender_id: int, bot) -> str:  # 将QQ号转换成昵称

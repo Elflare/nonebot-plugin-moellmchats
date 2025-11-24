@@ -190,7 +190,7 @@ async def handle_llm(
     if isinstance(is_finished, str):  # 表示失败，失败描述文字
         cd[user_id] = 0
         await matcher.finish(is_finished)
-    elif not is_finished:  # 失败后cd回1
+    elif not is_finished:  # 失败后cd回0
         cd[user_id] = 0
 
 

@@ -34,7 +34,7 @@ class MoeLlm:
         self.user_id = event.user_id
         self.is_objective = is_objective
         self.temperament = temperament
-        self.model_info = None
+        self.model_info = {}
         self.emotion_flag = False  # 判断本次对话是否发送表情包
         self.prompt = f"{temperament_manager.get_temperament_prompt(temperament)}。我的id是{ event.sender.card or event.sender.nickname}"
 
@@ -149,7 +149,7 @@ class MoeLlm:
                         self.messages_handler.post_process("".join(assistant_result))
                     return True  # 前面有，最后一句没回复，也当回完了
             else:
-                logger.error(f"Error: {response}")
+                logger.warning(f"Warning: {response}")
         return False
 
     async def none_stream_llm_chat(self, session, url, headers, data, proxy) -> bool:
@@ -164,7 +164,7 @@ class MoeLlm:
             response = await resp.json()
             # 返回200
             if resp.status != 200 or not response:
-                logger.error(response)
+                logger.warning(response)
                 return False
         if choices := response.get("choices"):
             content = choices[0]["message"]["content"]
@@ -182,7 +182,7 @@ class MoeLlm:
             else:
                 result = content
         else:
-            logger.error(response)
+            logger.warning(response)
             return False
         if not self.is_objective:
             self.messages_handler.post_process(result.strip())
@@ -244,6 +244,30 @@ class MoeLlm:
         self.prompt_handler()
         send_message_list = self.messages_handler.get_send_message_list()
         send_message_list.insert(0, {"role": "system", "content": self.prompt})
+        # === 多模态 Payload 构建逻辑 ===
+        # 1. 检查模型是否配置了 is_vision
+        # 2. 检查本次对话是否有图片
+        if self.model_info.get("is_vision") and self.messages_handler.current_images:
+            logger.info(
+                f"检测到多模态模型 {self.model_info['model']} 且存在图片，正在构建多模态请求..."
+            )
+
+            # 获取最后一条消息（即当前用户的纯文本消息）
+            current_msg = send_message_list[-1]
+            # 构建符合 OpenAI Vision 格式的 content 列表
+            vision_content = [{"type": "text", "text": current_msg["content"]}]
+            for img_url in self.messages_handler.current_images:
+                vision_content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": img_url
+                            # "detail": "high" # 可选：部分模型需要指定精度
+                        },
+                    }
+                )
+            # 替换 Payload 中的 content
+            send_message_list[-1]["content"] = vision_content
         data = {
             "model": self.model_info["model"],
             # "reasoning_effort": "none",
@@ -283,7 +307,7 @@ class MoeLlm:
                         self.event,
                         f"api又卡了呐！第 {retry_times+1} 次尝试，请勿多次发送~",
                     )
-                    await asyncio.sleep(2**(retry_times+1))
+                    await asyncio.sleep(2 ** (retry_times + 1))
                 try:
                     if self.model_info.get("stream"):
                         result = await self.stream_llm_chat(
@@ -311,6 +335,6 @@ class MoeLlm:
                     return "网络超时呐，多半是api反应太慢（"
                 except Exception:
                     logger.warning(str(send_message_list))
-                    traceback.print_exc()
+                    logger.error(traceback.format_exc())
                     continue
             return "api寄！"

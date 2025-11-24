@@ -33,12 +33,15 @@ class MessagesHandler:
         self.timestamp = time.time()
         self.messages_entity = MessagesEntity(self.timestamp)
         self.messages_entity_list = messages_dict[self.user_id]
+        self.current_images = []  # 暂存当前轮次的图片
 
     def clrear_messages(self):
         self.messages_entity_list = []
 
     # 预处理用户问题
     def pre_process(self, format_message_dict: dict) -> str:
+        # 提取图片列表
+        self.current_images = format_message_dict.get("images", [])
         if self.messages_entity_list:  # 之前有对话
             # 超过时间一对对话的删了
             for i in range(len(self.messages_entity_list) - 1, -1, -1):
