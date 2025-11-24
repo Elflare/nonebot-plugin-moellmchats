@@ -223,7 +223,7 @@ your_absolute_path/
     "1": "dpsk-chat", // 中等问题
     "2": "dpsk-r1", // 复杂问题
   },
-    vision_model: "gpt-4o", // ⚠️v0.17.0新增：视觉任务专用模型。当分类器判定需要“看图”时，将忽略难度分级，强制使用此模型。若未配置则回退到普通模型
+  vision_model: "gpt-4o", // ⚠️v0.17.0新增：视觉任务专用模型。当分类器判定需要“看图”时，将忽略难度分级，强制使用此模型。若未配置则回退到普通模型
   selected_model: "dpsk-r1", // 不启用MoE时的模型。最好填写上，在难度分级失败时也会回滚至此模型
   category_model: "glm-4-flash", // 问题分类模型（建议用免费或较小的模型）
   use_web_search: false, // 启用网络搜索（use_moe 为 true 时才生效）
