@@ -13,6 +13,7 @@ from nonebot.adapters.onebot.v11 import (
     Bot,
 )
 import random
+
 require("nonebot_plugin_localstore")
 from .utils import (
     hello__reply,
@@ -155,16 +156,28 @@ async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
     await model_matcher.finish(result)
 
 
+vision_model_matcher = on_command(
+    "切换视觉模型",
+    aliases={"设置视觉模型"},
+    permission=SUPERUSER,
+    priority=10,
+    block=True,
+)
+
+
+@vision_model_matcher.handle()
+async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
+    model_name = args.extract_plain_text().strip()
+    result = model_selector.set_vision_model(model_name)
+    await vision_model_matcher.finish(result)
+
+
 async def handle_llm(
     bot: Bot, event: GroupMessageEvent, matcher, format_message_dict: dict, is_ai=False
 ):
     # 获取消息文本
     user_id = event.sender.user_id
-    if (
-        # not model_selector.get_moe()  # 单模型加cd
-        # model_selector.get_current_model()["model"] == "deepseek-reasoner"
-        event.time - cd[user_id] < config_parser.get_config("cd_seconds")
-    ):
+    if event.time - cd[user_id] < config_parser.get_config("cd_seconds"):
         sender_name = event.sender.card or event.sender.nickname
         if is_repeat_ask_dict[user_id]:
             await matcher.finish(

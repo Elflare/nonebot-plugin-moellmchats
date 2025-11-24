@@ -223,9 +223,11 @@ class MoeLlm:
             if isinstance(category_result, str):  # 如果是str，则拒绝回答
                 return category_result
             if isinstance(category_result, tuple):  # 如果是tuple，则说明没有问题
-                difficulty, internet_required, key_word = category_result
+                difficulty, internet_required, key_word, vision_required = (
+                    category_result
+                )
                 logger.info(
-                    f"难度：{difficulty}, 是否联网：{internet_required}，搜索关键词：{key_word}"
+                    f"难度：{difficulty}, 联网：{internet_required}, 关键词：{key_word}, 视觉：{vision_required}"
                 )
                 # 判断是否联网
                 if internet_required and model_selector.get_web_search():
@@ -241,7 +243,31 @@ class MoeLlm:
                         )  # 搜索失败
                 # 根据难度改key和url
                 if model_selector.get_moe():  # moe
-                    self.model_info = model_selector.get_moe_current_model(difficulty)
+                    if vision_required and self.messages_handler.current_images:
+                        # 强制路由到 vision_model (需要在 model_config.json 里配好 "vision_model": "xxx")
+                        # 1. 尝试读取 vision_model 配置
+                        # 使用 .get() 避免报错，如果不存在则为 None
+                        vision_model_key = model_selector.model_config.get(
+                            "vision_model"
+                        )
+
+                        # 2. 核心检查：如果用户没配这个字段
+                        if vision_model_key:
+                            # 3. 获取具体模型配置
+                            self.model_info = model_selector.get_model("vision_model")
+                            logger.info(
+                                f"触发视觉任务，切换至视觉模型: {self.model_info['model']}"
+                            )
+                        else:
+                            logger.info(
+                                "触发视觉任务，但配置文件 model_config.json 缺少 vision_model 字段，退回普通模型"
+                            )
+
+                    else:
+                        # 否则按原来的难度分级走
+                        self.model_info = model_selector.get_moe_current_model(
+                            difficulty
+                        )
         if not self.model_info:  # 分类失败或者不是用的moe
             self.model_info = model_selector.get_model("selected_model")
         logger.info(f"模型选择为：{self.model_info['model']}")

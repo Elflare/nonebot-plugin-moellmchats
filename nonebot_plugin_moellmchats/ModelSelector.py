@@ -31,7 +31,7 @@ class ModelSelector:
                     "url": "https://api.deepseek.com/chat/completions",
                     "key": "Bearer xxx",
                     "model": "deepseek-chat",
-                    "temperature": 1.5,
+                    "temperature": 1.0,
                     "max_tokens": 1024,
                     "proxy": "http://127.0.0.1:7890",
                     "stream": True,
@@ -65,6 +65,7 @@ class ModelSelector:
                 "moe_models": {"0": "glm", "1": "glm", "2": "glm"},
                 "selected_model": "dpsk-chat",
                 "category_model": "glm",
+                "vision_model": "",  # 专门处理视觉任务的模型，默认不使用
                 "use_web_search": False,
             }
             self._write_config(self.model_config_file, default_config)
@@ -147,6 +148,18 @@ class ModelSelector:
         # 更新配置文件
         self._write_config(self.model_config_file, self.model_config)
         return f"已将{difficulty}的模型切换为{model_name}的{self.models[model_name]['model']}"
+
+    def set_vision_model(self, model_name: str) -> str:
+        # 设置视觉专用模型，model_name为models.json中的键
+        if model_name not in self.models:
+            return f"只能是{list(self.models.keys())}中的模型"
+
+        # 设置 vision_model
+        self.model_config["vision_model"] = model_name
+
+        # 更新配置文件
+        self._write_config(self.model_config_file, self.model_config)
+        return f"已切换视觉模型为{model_name}的{self.models[model_name]['model']}"
 
 
 model_selector = ModelSelector()
