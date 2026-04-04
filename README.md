@@ -222,7 +222,7 @@ your_absolute_path/
 #### 智能调度配置 `model_config.json`(指令维护)<br>
 
 📌 默认不开启moe和网络搜索，支持QQ指令实时切换；若手动修改，重启生效。<br>
-**模型名字必须为 `medels.json` 中的键值。**
+**模型名字必须为 `models.json` 中的键值。**
 
 ```json5
 {
