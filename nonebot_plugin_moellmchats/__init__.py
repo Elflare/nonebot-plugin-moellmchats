@@ -282,6 +282,7 @@ async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
     command_name = event.message.extract_plain_text().split()[0].strip()
     action = "add" if "添加" in command_name else "remove"
     result = model_selector.manage_tool_blacklist(action, plugin_name)
+    tool_manager.refresh_plugins()
     await manage_blacklist_matcher.finish(result)
 
 

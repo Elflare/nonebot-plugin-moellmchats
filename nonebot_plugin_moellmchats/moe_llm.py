@@ -258,11 +258,7 @@ class MoeLlm:
                 if model_selector.get_moe():  # moe
                     # 如果识别到需要调用插件，强行剥夺视觉判定。
                     # 因为大模型只需要生成指令文本，目标插件自己会去处理图片，避免视觉模型不支持tools
-                    if (
-                        vision_required
-                        and self.messages_handler.current_images
-                        and not required_plugins
-                    ):
+                    if vision_required and self.messages_handler.current_images:
                         vision_model_key = model_selector.model_config.get(
                             "vision_model"
                         )
@@ -275,14 +271,13 @@ class MoeLlm:
                             logger.info(
                                 "触发视觉任务，但未配置 vision_model 字段，退回普通模型"
                             )
+                            self.model_info = model_selector.get_moe_current_model(
+                                difficulty
+                            )
                     else:
                         self.model_info = model_selector.get_moe_current_model(
                             difficulty
                         )
-                        if required_plugins and vision_required:
-                            logger.info(
-                                "检测到插件调用需求，已屏蔽视觉模型调度以防止tools冲突"
-                            )
         if not self.model_info:  # 分类失败或者不是用的moe
             self.model_info = model_selector.get_model("selected_model")
         logger.info(f"模型选择为：{self.model_info['model']}")
@@ -352,7 +347,9 @@ class MoeLlm:
         if tools_schema:
             data["tools"] = tools_schema
             # 在前面插入, 让llm发一段消息说自己去调用工具了
-            send_message_list[0]["content"] += "。特别注意：如果你需要调用工具（如搜索、执行函数等），请务必在调用工具的同时，在回复文本中用简短的一句话告诉用户你打算做什么。也要符合你的人设。"
+            send_message_list[0]["content"] += (
+                "。特别注意：如果你需要调用工具（如搜索、执行函数等），请务必在调用工具的同时，在回复文本中用简短的一句话告诉用户你打算做什么。也要符合你的人设。"
+            )
             current_stream_flag = False
             logger.debug("检测到需要调用工具，已自动将本次请求切换为非流式")
             logger.debug("调用的插件详情：")
@@ -455,17 +452,23 @@ class MoeLlm:
                                 await self.bot.send(self.event, f"正在搜索: {query}...")
                             else:
                                 # 如果模型说话了，将其发送给用户
-                                processed_text = await self.send_emotion_message(result_text)
+                                processed_text = await self.send_emotion_message(
+                                    result_text
+                                )
 
                             search_res = await Search(query).get_search()
                             tool_result = search_res if search_res else "未找到相关结果"
 
                         elif func_name in tool_manager.custom_tools:
                             if not result_text:
-                                await self.bot.send(self.event, f"正在调用函数: {func_name}...")
+                                await self.bot.send(
+                                    self.event, f"正在调用函数: {func_name}..."
+                                )
                             else:
                                 # 同理，模型说话了就发送
-                                processed_text = await self.send_emotion_message(result_text)
+                                processed_text = await self.send_emotion_message(
+                                    result_text
+                                )
                             try:
                                 func = tool_manager.custom_tools[func_name]["func"]
                                 if inspect.iscoroutinefunction(func):
