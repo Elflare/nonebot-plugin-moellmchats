@@ -14,6 +14,8 @@
   - [基础配置 `config.json`(手动维护)](#基础配置-configjson手动维护)
   - [模型管理 `models.json`(手动维护)](#模型管理-modelsjson手动维护)
   - [智能调度配置 `model_config.json`(指令维护)](#智能调度配置-model_configjson指令维护)
+  - [插件自定义描述 `custom_plugin_info.json`(手动维护)](#插件自定义描述-custom_plugin_infojson手动维护)
+  - [原生自定义函数目录 `custom_tools/`(手动维护)](#原生自定义函数目录-custom_tools手动维护)
   - [性格设定 `temperaments.json` (手动维护)](#性格设定-temperamentsjson-手动维护)
   - [用户性格设定 `temperament_config.json` (指令维护)](#用户性格设定-temperament_configjson-指令维护)
 - [🎮 使用](#-使用)
@@ -66,6 +68,7 @@
   - 彻底避免将系统内所有可用插件的全量描述硬塞入上下文，极大地节省了 Token 消耗，同时有效防止了主模型因上下文过长而产生幻觉。
     - **自定义原生插件扩展**：提供 `custom_tools` 文件夹，支持用户直接编写原生 Python 脚本（如计算器、查天气等）供大模型原生调用，支持异步执行并直接返回结果。
   - **插件描述覆写机制**：自动生成 `custom_plugin_info.json`，支持用户为系统内已有的 NoneBot 插件自定义大模型触发描述与用法规范，大幅提升模型调用的准确率。
+
 ## 📦 安装
 
 <details>
@@ -252,6 +255,11 @@ your_absolute_path/
   }
 }
 ```
+#### 原生自定义函数目录 custom_tools/(手动维护)
+
+📌 首次运行后自动生成该文件夹及示例模板 `config/example_tool.py`。
+- 支持在文件夹内编写任意 .py 脚本，无需模拟 Nonebot 消息事件，直接由大模型作为原生函数 (Function Calling) 调用。
+- 编写完成后重启或者用命令刷新生效，非常适合写一些轻量级的爬虫、计算器、系统状态查询等扩展工具。
 
 #### 性格设定 `temperaments.json` (手动维护)<br>
 
