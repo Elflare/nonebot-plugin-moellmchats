@@ -31,7 +31,7 @@ from .tool_manager import tool_manager
 __plugin_meta__ = PluginMetadata(
     name="MoEllm聊天",
     description="感谢llm，机器人变聪明了\n✨ 混合专家模型调度LLM插件 | 混合调度·联网搜索·上下文优化·个性定制·Token节约·更加拟人 ✨",
-    usage="""1.艾特或以bot的名字开头进行对话\n2.用"性格切换xx"来切换性格（每个性格设定绑定每个人账号，不共享）\n3.用"ai xx"来快速调用纯ai助手\n4.超级管理员限定：用切换模型、切换moe、设置moe、设置联网、设置视觉模型来设置\n5. 用添加插件黑名单/移除插件黑名单来禁用bot的工具调用\n6. 用刷新工具/重载工具/刷新插件来热重载新增的函数""",
+    usage="""1.艾特或以bot的名字开头进行对话\n2.用"性格切换xx"来切换性格（每个性格设定绑定每个人账号，不共享）\n3.用"ai xx"来快速调用纯ai助手\n4.超级管理员限定：用切换模型、切换moe、设置moe、设置联网、设置视觉模型、设置函数调用来设置\n5. 用添加插件黑名单/移除插件黑名单来禁用bot的工具调用\n6. 用刷新工具/重载工具/刷新插件来热重载新增的函数""",
     type="application",
     homepage="https://github.com/Elflare/nonebot-plugin-moellmchats",
     supported_adapters={"~onebot.v11"},
@@ -246,7 +246,11 @@ if config_parser.get_config("fastai_enabled"):
 
 
 set_use_tools_matcher = on_command(
-    "设置工具调用", permission=SUPERUSER, priority=10, block=True
+    "设置工具调用",
+    aliases={"设置函数调用"},
+    permission=SUPERUSER,
+    priority=10,
+    block=True,
 )
 
 
