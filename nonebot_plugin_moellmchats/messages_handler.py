@@ -1,6 +1,6 @@
 from collections import defaultdict, deque
 import time
-from .Config import config_parser
+from .config import config_parser
 
 messages_dict = defaultdict(
     lambda: deque(maxlen=config_parser.get_config("max_user_history"))
@@ -13,9 +13,14 @@ class MessagesEntity:
         self.timestamp = timestamp
         self.user_msg = None
         self.assistant_msg = None
+        # 调用的工具
+        self.used_plugins = set()
 
     def add_user_msg(self, user_msg: dict):
         self.user_msg = user_msg
+
+    def add_used_plugins(self, plugins: set):
+        self.used_plugins.update(plugins)
 
     def add_assistant_msg(self, assistant_msg: dict):
         self.assistant_msg = assistant_msg
@@ -37,6 +42,14 @@ class MessagesHandler:
 
     def clrear_messages(self):
         self.messages_entity_list = []
+
+    def get_all_used_plugins(self) -> set:
+        """获取整个上下文中所有用过的工具集合"""
+        plugins = set()
+        for entity in self.messages_entity_list:
+            plugins.update(entity.used_plugins)
+        plugins.update(self.messages_entity.used_plugins)
+        return plugins
 
     # 预处理用户问题
     def pre_process(self, format_message_dict: dict) -> str:
@@ -67,12 +80,6 @@ class MessagesHandler:
         )  # 添加用户问题，之后再处理回答
         return plain
 
-    def search_message_handler(self, search_info: str):
-        # 添加搜索信息
-        self.new_user_msg["content"] += (
-            f"\n(这是联网搜索结果，供你进行参考： {search_info})"
-        )
-
     def append_message_list(self, messages_entity):
         messages_dict[self.user_id].append(self.messages_entity)
 
@@ -86,7 +93,7 @@ class MessagesHandler:
         return result
 
     # 后处理
-    def post_process(self, assistant_msg: str = None):
+    def post_process(self, assistant_msg: str = None, tool_calls: list = None):
         if assistant_msg:
             self.messages_entity.add_assistant_msg(
                 {"role": "assistant", "content": assistant_msg}

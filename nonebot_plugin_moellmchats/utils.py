@@ -1,6 +1,6 @@
 import nonebot
 from nonebot.log import logger
-from .Config import config_parser
+from .config import config_parser
 from random import choice
 from pathlib import Path
 from os import listdir

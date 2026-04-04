@@ -1,7 +1,7 @@
 import aiohttp
 import traceback
 from nonebot.log import logger
-from .Config import config_parser
+from .config import config_parser
 
 
 class Search:

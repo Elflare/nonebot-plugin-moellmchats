@@ -67,6 +67,23 @@ class ModelSelector:
                 "category_model": "glm",
                 "vision_model": "",  # 专门处理视觉任务的模型，默认不使用
                 "use_web_search": False,
+                "use_tools": True,
+                "tool_blacklist": [
+                    "nonebot_plugin_alconna",
+                    "nonebot_plugin_session_orm",
+                    "nonebot_plugin_orm",
+                    "nonebot_plugin_htmlrender",
+                    "nonebot_plugin_apscheduler",
+                    "nonebot_plugin_userinfo",
+                    "nonebot_plugin_saa",
+                    "nonebot_plugin_cesaa",
+                    "nonebot_plugin_waiter",
+                    "nonebot_plugin_chatrecorder",
+                    "nonebot_plugin_session",
+                    "nonebot_plugin_localstore",
+                    "uniseg",
+                    "nonebot_plugin_moellmchats",
+                ],
             }
             self._write_config(self.model_config_file, default_config)
             return default_config
@@ -84,6 +101,9 @@ class ModelSelector:
         # 获取当前是否使用联网
         return self.model_config["use_web_search"]
 
+    def get_use_tools(self):
+        return self.model_config.get("use_tools", False)
+
     def get_model(self, key: str) -> dict:
         # 获取单个模型的配置
         selected_model = self.model_config.get(key)
@@ -98,6 +118,9 @@ class ModelSelector:
             # 返回模型的完整配置
             return self.models[model_name]
 
+    def get_tool_blacklist(self) -> list:
+        return self.model_config.get("tool_blacklist", [])
+
     def set_moe(self, is_moe: bool = True) -> str:
         # 切换MOE配置
         self.model_config["use_moe"] = is_moe
@@ -109,6 +132,27 @@ class ModelSelector:
         self.model_config["use_web_search"] = is_web_search
         self._write_config(self.model_config_file, self.model_config)
         return "已开启联网搜索" if is_web_search else "已关闭联网搜索"
+
+    def set_use_tools(self, is_use_tools: bool = True) -> str:
+        self.model_config["use_tools"] = is_use_tools
+        self._write_config(self.model_config_file, self.model_config)
+        return "已开启函数调用(Tools)" if is_use_tools else "已关闭函数调用(Tools)"
+
+    def manage_tool_blacklist(self, action: str, plugin_name: str) -> str:
+        blacklist = self.model_config.setdefault("tool_blacklist", [])
+        if action == "add":
+            if plugin_name not in blacklist:
+                blacklist.append(plugin_name)
+                self._write_config(self.model_config_file, self.model_config)
+                return f"已将 {plugin_name} 加入工具黑名单"
+            return "该插件已在黑名单中"
+        elif action == "remove":
+            if plugin_name in blacklist:
+                blacklist.remove(plugin_name)
+                self._write_config(self.model_config_file, self.model_config)
+                return f"已将 {plugin_name} 从工具黑名单移除"
+            return "该插件不在黑名单中"
+        return "无效操作"
 
     def set_summary_model(self, model_name: str) -> str:
         # 设置单个模型，model_name为models.json中的键

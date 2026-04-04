@@ -5,14 +5,17 @@ import traceback
 from asyncio import TimeoutError
 from nonebot.log import logger
 from collections import defaultdict, deque
-from .Categorize import Categorize
-from .Search import Search
-from .ModelSelector import model_selector
-from .MessagesHandler import MessagesHandler
-from .Config import config_parser
-from .TemperamentManager import temperament_manager
+from .categorize import Categorize
+from .search import Search
+from .model_selector import model_selector
+from .messages_handler import MessagesHandler
+from .config import config_parser
+from .temperament_manager import temperament_manager
 from .utils import get_emotions_names, get_emotion, parse_emotion
 import random
+from .tool_manager import tool_manager
+from .event_simulator import event_simulator
+import inspect
 
 context_dict = defaultdict(
     lambda: deque(maxlen=config_parser.get_config("max_group_history"))
@@ -77,7 +80,7 @@ class MoeLlm:
 
     async def stream_llm_chat(
         self, session, url, headers, data, proxy, is_segment=False
-    ) -> bool:
+    ) -> tuple[bool, str, list]:
         # 流式响应内容
         buffer = []
         assistant_result = []  # 后处理助手回复
@@ -87,7 +90,7 @@ class MoeLlm:
             url, headers=headers, json=data, proxy=proxy
         ) as response:
             if error_msg := await self._check_400_error(response):
-                return error_msg
+                return False, error_msg, None
             # 确保响应是成功的
             if response.status == 200:
                 # 异步迭代响应内容
@@ -171,53 +174,48 @@ class MoeLlm:
                         self.messages_handler.post_process(
                             "".join(assistant_result) + result
                         )
-                    return True
+                    return True, "".join(assistant_result) + result, None
                 elif is_second_send:
                     if not self.is_objective:
                         self.messages_handler.post_process("".join(assistant_result))
-                    return True  # 前面有，最后一句没回复，也当回完了
+                    return True, "".join(assistant_result), None
             else:
                 logger.warning(f"Warning: {response}")
-        return False
+        return False, "API请求异常", None
 
-    async def none_stream_llm_chat(self, session, url, headers, data, proxy) -> bool:
+    async def none_stream_llm_chat(
+        self, session, url, headers, data, proxy
+    ) -> tuple[bool, str, list]:
         async with session.post(
-            url=url,
-            data=data,
-            headers=headers,
-            ssl=False,
-            proxy=proxy,
+            url=url, data=data, headers=headers, ssl=False, proxy=proxy
         ) as resp:
             if error_msg := await self._check_400_error(resp):
-                return error_msg
-            # 获取整个响应文本
+                return False, error_msg, None
             response = await resp.json()
-            # 返回200
             if resp.status != 200 or not response:
                 logger.warning(response)
-                return False
+                return False, "API返回异常", None
+
         if choices := response.get("choices"):
-            content = choices[0]["message"]["content"]
-            start_tag = "<think>"
-            end_tag = "</think>"
-            start = content.find(start_tag)
-            end = content.find(end_tag)
+            message = choices[0]["message"]
+            if tool_calls := message.get("tool_calls"):
+                return True, message.get("content", ""), tool_calls
+
+            content = message.get("content", "")
+            start_tag, end_tag = "<think>", "</think>"
+            start, end = content.find(start_tag), content.find(end_tag)
             if start == -1 and end != -1:
-                end += len(end_tag)
-                start = 0
-                result = content[:start] + content[end:]
+                result = content[:start] + content[end + len(end_tag) :]
             elif start != -1 and end != -1:
-                end += len(end_tag)
-                result = content[:start] + content[end:]
+                result = content[:start] + content[end + len(end_tag) :]
             else:
                 result = content
+
+            # 只返回解析好的文本，【不在这里发送，也不存上下文】
+            return True, result.strip(), None
         else:
             logger.warning(response)
-            return False
-        if not self.is_objective:
-            self.messages_handler.post_process(result.strip())
-        await self.bot.send(self.event, result.strip())
-        return True
+            return False, "API解析异常", None
 
     def prompt_handler(self):
         """处理system prompt，表情包和上下文相关"""
@@ -242,57 +240,49 @@ class MoeLlm:
         self.messages_handler = MessagesHandler(self.user_id)
         plain = self.messages_handler.pre_process(self.format_message_dict)
         # 获取难度和是否联网
-        if model_selector.get_moe() or model_selector.get_web_search():
+        if (
+            model_selector.get_moe()
+            or model_selector.get_web_search()
+            or model_selector.get_use_tools()
+        ):
             category = Categorize(plain)
             category_result = await category.get_category()
             if isinstance(category_result, str):  # 如果是str，则拒绝回答
                 return category_result
             if isinstance(category_result, tuple):  # 如果是tuple，则说明没有问题
-                difficulty, internet_required, key_word, vision_required = (
-                    category_result
-                )
+                difficulty, vision_required, required_plugins = category_result
                 logger.info(
-                    f"难度：{difficulty}, 联网：{internet_required}, 关键词：{key_word}, 视觉：{vision_required}"
+                    f"难度：{difficulty}, 视觉：{vision_required}, 需要插件：{required_plugins}"
                 )
-                # 判断是否联网
-                if internet_required and model_selector.get_web_search():
-                    search = Search(key_word)
-                    await self.bot.send(self.event, "検索中...検索中...=￣ω￣=")
-                    if search_result := await search.get_search():
-                        self.messages_handler.search_message_handler(search_result)
-                    elif isinstance(search_result, bool):
-                        await self.bot.send(self.event, "没搜到，可能没有相关内容")
-                    else:
-                        await self.bot.send(
-                            self.event, "搜索失败，请检查日志输出"
-                        )  # 搜索失败
                 # 根据难度改key和url
                 if model_selector.get_moe():  # moe
-                    if vision_required and self.messages_handler.current_images:
-                        # 强制路由到 vision_model (需要在 model_config.json 里配好 "vision_model": "xxx")
-                        # 1. 尝试读取 vision_model 配置
-                        # 使用 .get() 避免报错，如果不存在则为 None
+                    # 如果识别到需要调用插件，强行剥夺视觉判定。
+                    # 因为大模型只需要生成指令文本，目标插件自己会去处理图片，避免视觉模型不支持tools
+                    if (
+                        vision_required
+                        and self.messages_handler.current_images
+                        and not required_plugins
+                    ):
                         vision_model_key = model_selector.model_config.get(
                             "vision_model"
                         )
-
-                        # 2. 核心检查：如果用户没配这个字段
                         if vision_model_key:
-                            # 3. 获取具体模型配置
                             self.model_info = model_selector.get_model("vision_model")
                             logger.info(
                                 f"触发视觉任务，切换至视觉模型: {self.model_info['model']}"
                             )
                         else:
                             logger.info(
-                                "触发视觉任务，但配置文件 model_config.json 缺少 vision_model 字段，退回普通模型"
+                                "触发视觉任务，但未配置 vision_model 字段，退回普通模型"
                             )
-
                     else:
-                        # 否则按原来的难度分级走
                         self.model_info = model_selector.get_moe_current_model(
                             difficulty
                         )
+                        if required_plugins and vision_required:
+                            logger.info(
+                                "检测到插件调用需求，已屏蔽视觉模型调度以防止tools冲突"
+                            )
         if not self.model_info:  # 分类失败或者不是用的moe
             self.model_info = model_selector.get_model("selected_model")
         logger.info(f"模型选择为：{self.model_info['model']}")
@@ -324,24 +314,46 @@ class MoeLlm:
                 )
             # 替换 Payload 中的 content
             send_message_list[-1]["content"] = vision_content
+        current_stream_flag = self.model_info.get("stream", False)
         data = {
             "model": self.model_info["model"],
-            # "reasoning_effort": "none",
             "messages": send_message_list,
             "max_tokens": self.model_info.get("max_tokens"),
             "temperature": self.model_info.get("temperature"),
             "top_p": self.model_info.get("top_p"),
-            "stream": self.model_info.get("stream", False),
-            # "tools": [
-            #     {
-            #         "type": "web_search",
-            #         "web_search": {"enable": True},
-            #     }
-            # ],
         }
+        tools_schema = []
+        # 注入 Tool Schema 并动态修改流式开关
+        current_required = (
+            required_plugins
+            if "required_plugins" in locals() and required_plugins
+            else []
+        )
+        all_plugins = list(
+            set(current_required) | self.messages_handler.get_all_used_plugins()
+        )
+        if all_plugins:
+            normal_plugins = [p for p in all_plugins if p != "web_search"]
+            if model_selector.get_use_tools() and normal_plugins:
+                tools_schema.extend(
+                    tool_manager.get_tool_schema(normal_plugins, include_search=False)
+                )
+            if model_selector.get_web_search() and "web_search" in all_plugins:
+                tools_schema.extend(
+                    tool_manager.get_tool_schema([], include_search=True)
+                )
+        if tools_schema:
+            data["tools"] = tools_schema
+
+            current_stream_flag = False
+            logger.debug("检测到需要调用工具，已自动将本次请求切换为非流式")
+            logger.debug("调用的插件详情：")
+            logger.debug(json.dumps(tools_schema, indent=4, ensure_ascii=False))
         # 有的模型没有top_k
         if self.model_info.get("top_k"):
             data["top_k"] = self.model_info.get("top_k")
+        # 最终写入决定的流式开关
+        data["stream"] = current_stream_flag
 
         headers = {
             "Authorization": self.model_info["key"],
@@ -356,41 +368,140 @@ class MoeLlm:
                 if config_parser.get_config("max_retry_times")
                 else 3
             )
-            result = ""
-            for retry_times in range(max_retry_times):
-                if retry_times > 0:
-                    await self.bot.send(
-                        self.event,
-                        f"api又卡了呐！第 {retry_times+1} 次尝试，请勿多次发送~",
-                    )
-                    await asyncio.sleep(2 ** (retry_times + 1))
-                try:
-                    if self.model_info.get("stream"):
-                        result = await self.stream_llm_chat(
-                            session,
-                            self.model_info["url"],
-                            headers,
-                            data,
-                            self.model_info.get("proxy"),
-                            self.model_info.get("is_segment"),
+
+            # 最多允许大模型连续调用 3 次工具，防止死循环
+            for tool_round in range(3):
+                result_text = ""
+                success = False
+                tool_calls = None
+
+                for retry_times in range(max_retry_times):
+                    if retry_times > 0:
+                        await self.bot.send(
+                            self.event,
+                            f"api又卡了呐！第 {retry_times+1} 次尝试，请勿多次发送~",
                         )
-                    else:
-                        data = json.dumps(data)
-                        result = await self.none_stream_llm_chat(
-                            session,
-                            self.model_info["url"],
-                            headers,
-                            data,
-                            self.model_info.get("proxy"),
-                        )
-                    if result:
-                        return result  # 正常返回从这里
-                    else:  # 出错
+                        await asyncio.sleep(2 ** (retry_times + 1))
+                    try:
+                        if current_stream_flag:
+                            (
+                                success,
+                                result_text,
+                                tool_calls,
+                            ) = await self.stream_llm_chat(
+                                session,
+                                self.model_info["url"],
+                                headers,
+                                data,
+                                self.model_info.get("proxy"),
+                                self.model_info.get("is_segment"),
+                            )
+                        else:
+                            (
+                                success,
+                                result_text,
+                                tool_calls,
+                            ) = await self.none_stream_llm_chat(
+                                session,
+                                self.model_info["url"],
+                                headers,
+                                json.dumps(data),
+                                self.model_info.get("proxy"),
+                            )
+                        if success:
+                            break
+                    except TimeoutError:
+                        result_text = "网络超时呐，多半是api反应太慢（"
+                    except Exception:
+                        logger.warning(str(send_message_list))
+                        logger.error(traceback.format_exc())
                         continue
-                except TimeoutError:
-                    return "网络超时呐，多半是api反应太慢（"
-                except Exception:
-                    logger.warning(str(send_message_list))
-                    logger.error(traceback.format_exc())
-                    continue
-            return "api寄！"
+
+                if not success:
+                    return result_text or "api寄！"
+                # 有工具调用，则继续处理
+                if tool_calls:
+                    send_message_list.append(
+                        {
+                            "role": "assistant",
+                            "content": result_text,
+                            "tool_calls": tool_calls,
+                        }
+                    )
+                    tool_memory_list = []  # 用于长期记忆的文字记录
+                    for call in tool_calls:
+                        func_name = call["function"]["name"]
+                        # 记录该用户在当前轮次解锁了此工具，过期自动销毁
+                        self.messages_handler.messages_entity.add_used_plugins(
+                            {func_name}
+                        )
+                        try:
+                            args = json.loads(call["function"]["arguments"])
+                        except Exception:
+                            args = {}
+
+                        tool_result = "执行成功"
+                        if func_name == "web_search":
+                            query = args.get("query", "")
+                            await self.bot.send(self.event, f"正在搜索: {query}...")
+                            search_res = await Search(query).get_search()
+                            tool_result = search_res if search_res else "未找到相关结果"
+
+                        # 拦截并执行自定义函数
+                        elif func_name in tool_manager.custom_tools:
+                            await self.bot.send(
+                                self.event, f"正在调用函数: {func_name}..."
+                            )
+                            try:
+                                func = tool_manager.custom_tools[func_name]["func"]
+                                # 兼容同步与异步函数
+                                if inspect.iscoroutinefunction(func):
+                                    res = await func(**args)
+                                else:
+                                    res = func(**args)
+                                tool_result = str(res)
+                            except Exception as e:
+                                logger.error(traceback.format_exc())
+                                tool_result = f"函数执行出错: {str(e)}"
+
+                        # 原有的 Nonebot 事件模拟
+                        else:
+                            command = args.get("command", "")
+                            await event_simulator.dispatch_event(
+                                self.bot, self.event, command
+                            )
+                            tool_result = (
+                                "指令已投递。请向用户简要总结你已经调用了该工具。"
+                            )
+
+                        send_message_list.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": call["id"],
+                                "content": tool_result,
+                            }
+                        )
+                        tool_memory_list.append(
+                            f"[系统隐藏记录：你刚才调用了工具 {func_name}，参数是 {args}，结果是：{tool_result[:200]}]"
+                        )
+                    data["messages"] = send_message_list
+                    continue  # 继续下一轮循环请求大模型，让它根据工具结果做总结
+
+                # ===== 没有工具调用，正常结束 =====
+                # 只有非流式且有结果时，才在这里进行发送
+                if not current_stream_flag and result_text:
+                    result_text = await self.send_emotion_message(result_text)
+
+                # 统一保存上下文
+                if not self.is_objective:
+                    # 如果有工具调用记录，将其作为隐藏提示悄悄追加到大模型的记忆里（不会发给用户）
+                    final_memory = result_text
+                    if (
+                        hasattr(self, "current_tool_memory")
+                        and self.current_tool_memory
+                    ):
+                        final_memory = f"{self.current_tool_memory}\n{result_text}"
+                    self.messages_handler.post_process(final_memory)
+
+                # 成功必须返回 True，不能返回字符串，否则会被外层当做报错信息再次发出
+                return True

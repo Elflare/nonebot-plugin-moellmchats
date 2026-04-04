@@ -23,15 +23,15 @@ from .utils import (
 from collections import defaultdict
 
 from . import moe_llm as llm
-from .ModelSelector import model_selector
-from .TemperamentManager import temperament_manager
-from .Config import config_parser
-
+from .model_selector import model_selector
+from .temperament_manager import temperament_manager
+from .config import config_parser
+from .tool_manager import tool_manager
 
 __plugin_meta__ = PluginMetadata(
     name="MoEllm聊天",
     description="感谢llm，机器人变聪明了\n✨ 混合专家模型调度LLM插件 | 混合调度·联网搜索·上下文优化·个性定制·Token节约·更加拟人 ✨",
-    usage="""1.艾特或以bot的名字开头进行对话\n2.用"性格切换xx"来切换性格（每个性格设定绑定每个人账号，不共享）\n3.用"ai xx"来快速调用纯ai助手\n4.超级管理员限定：用切换模型、切换moe、设置moe、设置联网、设置视觉模型来设置""",
+    usage="""1.艾特或以bot的名字开头进行对话\n2.用"性格切换xx"来切换性格（每个性格设定绑定每个人账号，不共享）\n3.用"ai xx"来快速调用纯ai助手\n4.超级管理员限定：用切换模型、切换moe、设置moe、设置联网、设置视觉模型来设置\n5. 用添加插件黑名单/移除插件黑名单来禁用bot的工具调用\n6. 用刷新工具/重载工具/刷新插件来热重载新增的函数""",
     type="application",
     homepage="https://github.com/Elflare/nonebot-plugin-moellmchats",
     supported_adapters={"~onebot.v11"},
@@ -245,8 +245,64 @@ if config_parser.get_config("fastai_enabled"):
             )  # 没有就选一个卖萌回复
 
 
-# 优先级10，不会向下阻断，条件：戳一戳bot触发
+set_use_tools_matcher = on_command(
+    "设置工具调用", permission=SUPERUSER, priority=10, block=True
+)
 
+
+@set_use_tools_matcher.handle()
+async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
+    is_use_tools = args.extract_plain_text().strip()
+    if is_use_tools not in ["开", "关", "0", "1"]:
+        await set_use_tools_matcher.finish(
+            "参数错误，格式为：设置工具调用 开、关、1、0"
+        )
+    result = model_selector.set_use_tools(is_use_tools in ["开", "1"])
+    await set_use_tools_matcher.finish(result)
+
+
+manage_blacklist_matcher = on_command(
+    "添加插件黑名单",
+    aliases={"移除插件黑名单"},
+    permission=SUPERUSER,
+    priority=10,
+    block=True,
+)
+
+
+@manage_blacklist_matcher.handle()
+async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
+    plugin_name = args.extract_plain_text().strip()
+    if not plugin_name:
+        await manage_blacklist_matcher.finish("请提供插件名，如：添加黑名单 xxx")
+    command_name = event.message.extract_plain_text().split()[0].strip()
+    action = "add" if "添加" in command_name else "remove"
+    result = model_selector.manage_tool_blacklist(action, plugin_name)
+    await manage_blacklist_matcher.finish(result)
+
+
+refresh_tools_matcher = on_command(
+    "刷新工具",
+    aliases={"重载工具", "刷新插件"},
+    permission=SUPERUSER,
+    priority=10,
+    block=True,
+)
+
+
+@refresh_tools_matcher.handle()
+async def _():
+    try:
+        tool_manager.refresh_plugins()
+        tool_manager._load_custom_tools()
+        await refresh_tools_matcher.finish(
+            f"工具重载成功！当前已加载 {len(tool_manager.plugin_info)} 个原生插件与 {len(tool_manager.custom_tools)} 个自定义函数。"
+        )
+    except Exception as e:
+        await refresh_tools_matcher.finish(f"工具重载失败：{e}")
+
+
+# 优先级10，不会向下阻断，条件：戳一戳bot触发
 poke_ = on_notice(rule=to_me(), priority=11, block=False)
 
 
