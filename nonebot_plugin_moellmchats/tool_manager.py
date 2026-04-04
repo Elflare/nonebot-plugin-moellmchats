@@ -37,43 +37,67 @@ class ToolManager:
         is_first_time_dir = not self.custom_tools_dir.exists()
         self.custom_tools_dir.mkdir(parents=True, exist_ok=True)
         
-        template_file = self.custom_tools_dir / "example_tool.py"
-        # 如果是首次创建文件夹，且模板文件不存在，则生成一个详细的 Python 模板
+        template_file = self.custom_tools_dir / "web_extractor.py"
+        # 如果是首次创建文件夹，且模板文件不存在，则生成网页提取模板
         if is_first_time_dir or not list(self.custom_tools_dir.glob("*.py")):
-            template_content = '''# 这是一个自定义函数的模板文件
-# 你可以在这个文件夹 (custom_tools) 下创建任意多个 .py 文件，机器人每次获取插件目录时都会自动加载它们。
+            template_content = r'''# 这是一个提取网页正文内容的自定义函数模板。
+# 【机制说明】
+# 机器人已内置了“工具捆绑”逻辑：当你开启了联网搜索 (web_search) 时，
+# 如果本文件存在，系统会自动将这个网页提取工具和搜索工具一起提供给大模型。
+# 这样大模型在搜索到摘要和 URL 后，就能自主决定是否调用本工具阅读网页详情。
+# （当然，如果你不需要此功能，直接删除本文件即可）
 
-import asyncio
+import aiohttp
+from bs4 import BeautifulSoup
+import re
 
-# 1. 编写你的函数（支持普通函数 def 和 异步函数 async def）
-# 注意：函数的返回值建议为字符串，它将直接作为工具调用结果反馈给大模型。
-async def get_weather(city: str) -> str:
-    """这是一个获取天气的示例函数"""
-    # 这里可以编写真实的业务逻辑，比如请求外部API、查询数据库等
-    await asyncio.sleep(1) # 模拟网络请求
-    if city in ["北京", "beijing"]:
-        return f"{city}目前天气晴朗，气温24度，适合外出。"
-    else:
-        return f"暂时无法获取 {city} 的天气信息，请尝试其他城市。"
+async def extract_webpage(url: str) -> str:
+    """提取网页的正文内容"""
+    if not url.startswith(("http://", "https://")):
+        return "提取失败：请提供有效的URL（以http://或https://开头）"
 
-# 2. 将函数注册到 TOOLS_REGISTRY 中
-# 必须定义这个列表，插件管理器会遍历它并将其提供给大模型。
-# 参数结构请严格遵守 OpenAI 的 Function Calling Schema 格式。
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+    }
+    timeout = aiohttp.ClientTimeout(total=10)
+    
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers=headers) as response:
+                if response.status != 200:
+                    return f"提取失败：网页返回状态码 {response.status}"
+                html = await response.text()
+                
+        soup = BeautifulSoup(html, "html.parser")
+        for element in soup(["script", "style", "noscript", "nav", "footer", "header", "aside"]):
+            element.decompose()
+        
+        text = soup.get_text(separator="\n")
+        text = re.sub(r'\n\s*\n', '\n', text).strip()
+        
+        max_length = 4000
+        if len(text) > max_length:
+            text = text[:max_length] + "\n\n...[由于内容过长，为防止上下文超出限制，已自动截断]"
+            
+        return f"网页提取成功，以下是内容摘要：\n{text}"
+    except Exception as e:
+        return f"提取网页失败，发生错误：{str(e)}"
+
 TOOLS_REGISTRY = [
     {
-        "name": "get_weather",  # 工具的唯一英文标识符 (只能包含 a-z, A-Z, 0-9, _ )
-        "description": "获取指定城市的天气状态，当用户询问天气时调用此工具。",  # 给大模型看的工具功能描述，写得越清楚大模型调用越准确
+        "name": "extract_webpage",
+        "description": "读取并提取指定URL网页的正文内容。当需要深入了解搜索结果中的链接，或用户要求分析某个网页时调用。",
         "parameters": {
             "type": "object",
             "properties": {
-                "city": {
+                "url": {
                     "type": "string",
-                    "description": "需要查询天气的城市名称，例如：北京、上海"
+                    "description": "需要提取的完整网页链接"
                 }
             },
-            "required": ["city"]  # 必填参数列表
+            "required": ["url"]
         },
-        "func": get_weather  # 绑定上面定义的真实函数对象（不要加括号）
+        "func": extract_webpage
     }
 ]
 '''

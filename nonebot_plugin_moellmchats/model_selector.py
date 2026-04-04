@@ -133,6 +133,18 @@ class ModelSelector:
         self._write_config(self.model_config_file, self.model_config)
         return "已开启联网搜索" if is_web_search else "已关闭联网搜索"
 
+    def set_category_model(self, model_name: str) -> str:
+        # 设置分类模型，model_name为models.json中的键
+        if model_name not in self.models:
+            return f"只能是{list(self.models.keys())}中的模型"
+
+        # 设置 category_model
+        self.model_config["category_model"] = model_name
+
+        # 更新配置文件
+        self._write_config(self.model_config_file, self.model_config)
+        return f"已切换分类模型为{model_name}的{self.models[model_name]['model']}"
+
     def set_use_tools(self, is_use_tools: bool = True) -> str:
         self.model_config["use_tools"] = is_use_tools
         self._write_config(self.model_config_file, self.model_config)

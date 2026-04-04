@@ -329,9 +329,16 @@ class MoeLlm:
             if "required_plugins" in locals() and required_plugins
             else []
         )
-        all_plugins = list(
+        all_plugins_set = (
             set(current_required) | self.messages_handler.get_all_used_plugins()
         )
+        # 如果本次即将调用或使用了联网搜索，且存在网页提取工具，则自动捆绑挂载 Schema，以备不时之需
+        if (
+            "web_search" in all_plugins_set
+            and "extract_webpage" in tool_manager.custom_tools
+        ):
+            all_plugins_set.add("extract_webpage")
+        all_plugins = list(all_plugins_set)
         if all_plugins:
             normal_plugins = [p for p in all_plugins if p != "web_search"]
             if model_selector.get_use_tools() and normal_plugins:
@@ -344,7 +351,8 @@ class MoeLlm:
                 )
         if tools_schema:
             data["tools"] = tools_schema
-
+            # 在前面插入, 让llm发一段消息说自己去调用工具了
+            send_message_list[0]["content"] += "。特别注意：如果你需要调用工具（如搜索、执行函数等），请务必在调用工具的同时，在回复文本中用简短的一句话告诉用户你打算做什么。也要符合你的人设。"
             current_stream_flag = False
             logger.debug("检测到需要调用工具，已自动将本次请求切换为非流式")
             logger.debug("调用的插件详情：")
@@ -439,22 +447,27 @@ class MoeLlm:
                             args = json.loads(call["function"]["arguments"])
                         except Exception:
                             args = {}
-
+                        logger.info(f"准备执行函数: {func_name}，传入参数: {args}")
                         tool_result = "执行成功"
                         if func_name == "web_search":
                             query = args.get("query", "")
-                            await self.bot.send(self.event, f"正在搜索: {query}...")
+                            if not result_text:
+                                await self.bot.send(self.event, f"正在搜索: {query}...")
+                            else:
+                                # 如果模型说话了，将其发送给用户
+                                processed_text = await self.send_emotion_message(result_text)
+
                             search_res = await Search(query).get_search()
                             tool_result = search_res if search_res else "未找到相关结果"
 
-                        # 拦截并执行自定义函数
                         elif func_name in tool_manager.custom_tools:
-                            await self.bot.send(
-                                self.event, f"正在调用函数: {func_name}..."
-                            )
+                            if not result_text:
+                                await self.bot.send(self.event, f"正在调用函数: {func_name}...")
+                            else:
+                                # 同理，模型说话了就发送
+                                processed_text = await self.send_emotion_message(result_text)
                             try:
                                 func = tool_manager.custom_tools[func_name]["func"]
-                                # 兼容同步与异步函数
                                 if inspect.iscoroutinefunction(func):
                                     res = await func(**args)
                                 else:
@@ -464,7 +477,6 @@ class MoeLlm:
                                 logger.error(traceback.format_exc())
                                 tool_result = f"函数执行出错: {str(e)}"
 
-                        # 原有的 Nonebot 事件模拟
                         else:
                             command = args.get("command", "")
                             await event_simulator.dispatch_event(
@@ -474,6 +486,7 @@ class MoeLlm:
                                 "指令已投递。请向用户简要总结你已经调用了该工具。"
                             )
 
+                        # 把工具返回结果塞入消息队列
                         send_message_list.append(
                             {
                                 "role": "tool",
@@ -484,6 +497,8 @@ class MoeLlm:
                         tool_memory_list.append(
                             f"[系统隐藏记录：你刚才调用了工具 {func_name}，参数是 {args}，结果是：{tool_result[:200]}]"
                         )
+
+                    self.current_tool_memory = "\n".join(tool_memory_list)
                     data["messages"] = send_message_list
                     continue  # 继续下一轮循环请求大模型，让它根据工具结果做总结
 

@@ -306,6 +306,22 @@ async def _():
         await refresh_tools_matcher.finish(f"工具重载失败：{e}")
 
 
+category_model_matcher = on_command(
+    "切换分类模型",
+    aliases={"设置分类模型"},
+    permission=SUPERUSER,
+    priority=10,
+    block=True,
+)
+
+
+@category_model_matcher.handle()
+async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
+    model_name = args.extract_plain_text().strip()
+    result = model_selector.set_category_model(model_name)
+    await category_model_matcher.finish(result)
+
+
 # 优先级10，不会向下阻断，条件：戳一戳bot触发
 poke_ = on_notice(rule=to_me(), priority=11, block=False)
 
