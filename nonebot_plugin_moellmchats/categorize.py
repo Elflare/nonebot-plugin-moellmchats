@@ -24,16 +24,22 @@ class Categorize:
   "vision_required": true | false,
   "required_plugins": []
 }}
-说明：
+【参数说明】：
+- difficulty: "0"(简单常识/闲聊)、"1"(中等逻辑/计算)、"2"(高难度专业/深度分析)。
+- vision_required: 当用户输入中包含"[图片]"字样时必须为 true，否则为 false。
+- required_plugins: 字符串列表。根据下方插件目录，判断是否必须调用插件（可以多个）。
+【可用插件目录】：
+{catalog}
+注：不要自信：大模型没有时间观念，计算能力也有限。若有对应插件请提供。若没有，则保持[]。
+【示例】：
+用户输入："今天北京天气怎么样？"
+输出：{{"difficulty": "0", "vision_required": false, "required_plugins": ["web_search"]}}
 
-difficulty: 用来表示问题的难度等级：
-"0": 简单直接明了的问题，几乎无需思考或计算。
-"1": 中等难度的问题，可能需要一定的思考、分析或计算。
-"2": 高难度的问题，需要深厚的专业知识或广泛的研究才能回答。
-vision_required: 布尔值。当输入中包含[图片]字样时为true，没发图则为false。
-"required_plugins": 字符串列表。根据用户的意图，判断是否需要调用以下已有插件功能（可以多个）。如果需要，将插件标识填入列表，不需要则返回空列表[]。可用插件目录如下：{catalog}
-注：
-不要自信：大模型没有时间观念，计算能力也有限。若有对应插件请提供。若没有，则保持[]。
+用户输入："你觉得人工智能会取代人类吗？"
+输出：{{"difficulty": "2", "vision_required": false, "required_plugins": []}}
+
+用户输入："[图片]帮我看看这个图里是什么"
+输出：{{"difficulty": "1", "vision_required": true, "required_plugins": []}}
 """
 
         send_message_list = [

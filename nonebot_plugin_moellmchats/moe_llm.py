@@ -74,7 +74,8 @@ class MoeLlm:
             ]
 
             if any(k.lower() in error_content.lower() for k in sensitive_keywords):
-                return "图片或内容可能包含敏感信息，被AI审核拦截了喵 >_<"
+                return "图片或内容可能包含敏感信息"
+            logger.warning(f'看看之前的对话记录：{self.format_message_dict}')
             return "API请求被拒绝 (400)，请检查后台日志。"
         return None
 
@@ -307,8 +308,11 @@ class MoeLlm:
                         },
                     }
                 )
-            # 替换 Payload 中的 content
-            send_message_list[-1]["content"] = vision_content
+            # 替换最后的内容
+            send_message_list[-1] = {
+                "role": current_msg["role"],
+                "content": vision_content
+            }
         current_stream_flag = self.model_info.get("stream", False)
         data = {
             "model": self.model_info["model"],
@@ -348,7 +352,7 @@ class MoeLlm:
             data["tools"] = tools_schema
             # 在前面插入, 让llm发一段消息说自己去调用工具了
             send_message_list[0]["content"] += (
-                "。特别注意：如果你需要调用工具（如搜索、执行函数等），请务必在调用工具的同时，在回复文本中用简短的一句话告诉用户你打算做什么。也要符合你的人设。"
+                "。特别注意：1. 同步执行：如果你需要调用工具，必须在本次回复的文本(content)中用简短的一句话说明你要做什么，并**在同一次回复中立刻发起工具调用(tool_calls)**！严禁只发提示文字而把工具调用留到下一次回复！2. 如果用户的请求包含多个步骤逻辑，你必须在获取到前置工具的结果后，**自动且连续地调用下一个工具**，直至彻底完成用户的所有要求。"
             )
             current_stream_flag = False
             logger.debug("检测到需要调用工具，已自动将本次请求切换为非流式")
@@ -374,8 +378,9 @@ class MoeLlm:
                 else 3
             )
 
-            # 最多允许大模型连续调用 3 次工具，防止死循环
-            for tool_round in range(3):
+            # 最多允许大模型连续调用轮次
+            max_tool_rounds = config_parser.get_config("max_tool_rounds") or 3
+            for tool_round in range(max_tool_rounds):
                 result_text = ""
                 success = False
                 tool_calls = None
@@ -482,11 +487,9 @@ class MoeLlm:
 
                         else:
                             command = args.get("command", "")
-                            await event_simulator.dispatch_event(
+                            # 等待真实执行并获取结果
+                            tool_result = await event_simulator.dispatch_event(
                                 self.bot, self.event, command
-                            )
-                            tool_result = (
-                                "指令已投递。请向用户简要总结你已经调用了该工具。"
                             )
 
                         # 把工具返回结果塞入消息队列

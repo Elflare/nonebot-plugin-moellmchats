@@ -1,30 +1,57 @@
 import asyncio
 import traceback
-from nonebot.log import logger  
-from nonebot.adapters.onebot.v11 import Message, GroupMessageEvent, PrivateMessageEvent
+from nonebot.log import logger
+from nonebot.adapters.onebot.v11 import (
+    Bot,
+    Message,
+    GroupMessageEvent,
+    PrivateMessageEvent,
+)
 from nonebot.message import handle_event
+
+# ================= 核心修复：并发安全的全局拦截器 =================
+# 使用字典存储需要拦截的 message_id 及其对应的截获结果
+_intercepted_messages = {}
+
+# 仅在模块加载时保存一次原始的 Bot.send 方法
+_original_bot_send = Bot.send
+
+
+async def _safe_mock_send(self: Bot, event, message, **kwargs):
+    msg_id = getattr(event, "message_id", None)
+    # 检查是否命中当前正在模拟的拦截任务
+    if msg_id in _intercepted_messages:
+        text = (
+            message.extract_plain_text()
+            if hasattr(message, "extract_plain_text")
+            else str(message)
+        )
+        if text.strip():
+            _intercepted_messages[msg_id].append(text.strip())
+
+    # 无论是否被拦截记录，最后都执行原始的发送逻辑，让用户能真实看到插件的输出
+    return await _original_bot_send(self, event, message, **kwargs)
+
+
+# 替换 Bot 类的 send 方法（全局生效，无需在执行时反复替换）
+Bot.send = _safe_mock_send
+# ==================================================================
+
 
 class EventSimulator:
     @staticmethod
-    async def dispatch_event(bot, original_event, command_str: str) -> bool:
-        """
-        伪造事件并投递给 Nonebot 框架处理，同时继承原事件的图片与引用属性
-        """
+    async def dispatch_event(bot, original_event, command_str: str) -> str:
         if not command_str:
             logger.warning("大模型生成的指令文本为空，不投递事件")
-            return False
+            return "执行失败：指令参数为空"
 
         try:
-            # 构建基础的文本消息
             fake_message = Message(command_str)
-            
-            # 继承原始消息中的图片段
             if hasattr(original_event, "message"):
                 for seg in original_event.message:
                     if seg.type == "image":
                         fake_message.append(seg)
-                        
-            # 动态构造 kwargs，避免 Pydantic 因 None 字段报错
+
             kwargs = {
                 "time": original_event.time,
                 "self_id": original_event.self_id,
@@ -38,8 +65,7 @@ class EventSimulator:
                 "font": getattr(original_event, "font", 0),
                 "sender": original_event.sender,
             }
-            
-            # 只有当 reply 真实存在时才继承，防止 Pydantic 校验抛错
+
             original_reply = getattr(original_event, "reply", None)
             if original_reply is not None:
                 kwargs["reply"] = original_reply
@@ -50,16 +76,34 @@ class EventSimulator:
             elif isinstance(original_event, PrivateMessageEvent):
                 fake_event = PrivateMessageEvent(**kwargs)
             else:
-                logger.warning(f"不支持的事件类型模拟: {type(original_event)}")
-                return False
+                return f"不支持的事件类型模拟: {type(original_event)}"
 
-            logger.info(f"LLM 事件模拟投递 -> 指令: [{command_str}] (已继承原始图片/引用)")
-            asyncio.create_task(handle_event(bot, fake_event))
-            return True
-            
+            logger.info(f"LLM 事件模拟投递 -> 指令: [{command_str}]")
+
+            msg_id = fake_event.message_id
+
+            #  执行前：在字典中注册当前 message_id
+            _intercepted_messages[msg_id] = []
+
+            try:
+                # 阻塞等待框架处理伪造的事件
+                await handle_event(bot, fake_event)
+            except Exception as plugin_error:
+                return (
+                    f"插件执行出错: {type(plugin_error).__name__} - {str(plugin_error)}"
+                )
+            finally:
+                #  执行后：无论成功失败，提取结果并从字典中注销，防止内存泄漏
+                captured_texts = _intercepted_messages.pop(msg_id, [])
+
+            if captured_texts:
+                plugin_result = "\n".join(captured_texts)
+                # 修改提示词：允许其继续调用剩余工具
+                return f"插件执行返回结果：\n{plugin_result}\n\n[系统提示]：上述结果已对用户可见。注意：若执行不正确或者用户的原始请求需要多个步骤，请务重试或者继续调用下一个工具！如果所有任务均已完成，请直接做一两句话的简短总结，严禁重复上述已发送的结果。"
+            return "插件已执行，但未返回有效文本。[系统提示]：如果有后续操作，请继续调用下一个工具。"
         except Exception as e:
-            logger.error(f"模拟事件投递失败: {e}")
-            logger.error(traceback.format_exc())  # 强制打印完整堆栈以备查
-            return False
+            logger.error(traceback.format_exc())
+            return f"系统级投递事件失败: {str(e)}"
+
 
 event_simulator = EventSimulator()
