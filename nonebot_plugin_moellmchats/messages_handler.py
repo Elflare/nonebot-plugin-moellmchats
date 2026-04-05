@@ -86,16 +86,24 @@ class MessagesHandler:
     def get_send_message_list(self) -> list:
         result = []
         for messages_entity in self.messages_entity_list:
-            # 成对添加
-            result.append(messages_entity.get_user_msg())
-            result.append(messages_entity.get_assistant_msg())
+            user_msg = messages_entity.get_user_msg()
+            result.append(user_msg)
+            ast_msg = messages_entity.get_assistant_msg()
+            # 拦截历史记录中的空 content，替换为占位符，防止触发 400
+            if "content" not in ast_msg or not ast_msg["content"]:
+                ast_msg["content"] = "（执行完毕）"
+            result.append(ast_msg)
+                
         result.append(self.messages_entity.get_user_msg())
         return result
 
     # 后处理
     def post_process(self, assistant_msg: str = None, tool_calls: list = None):
-        if assistant_msg:
-            self.messages_entity.add_assistant_msg(
-                {"role": "assistant", "content": assistant_msg}
-            )
-            messages_dict[self.user_id].append(self.messages_entity)
+        # 核心修复：即使大模型完全没说话，也要强制塞入占位符，保证一问一答上下文不缺失且不为空
+        if not assistant_msg or not assistant_msg.strip():
+            assistant_msg = "（已完成操作）"
+            
+        self.messages_entity.add_assistant_msg(
+            {"role": "assistant", "content": assistant_msg}
+        )
+        messages_dict[self.user_id].append(self.messages_entity)

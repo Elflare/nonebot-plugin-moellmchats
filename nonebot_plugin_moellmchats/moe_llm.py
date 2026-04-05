@@ -57,7 +57,7 @@ class MoeLlm:
             await self.bot.send(self.event, content)
         return content
 
-    async def _check_400_error(self, response) -> str:
+    async def _check_400_error(self, response, request_data=None) -> str:
         """检查是否为400错误及敏感内容拦截，返回错误提示或None"""
         if response.status == 400:
             error_content = await response.text()
@@ -75,7 +75,17 @@ class MoeLlm:
 
             if any(k.lower() in error_content.lower() for k in sensitive_keywords):
                 return "图片或内容可能包含敏感信息"
-            logger.warning(f'看看之前的对话记录：{self.format_message_dict}')
+            # 打印发往大模型的完整 JSON Payload
+            if request_data is not None:
+                if isinstance(request_data, str):
+                    try:
+                        request_data = json.loads(request_data)
+                    except Exception:
+                        pass
+                logger.warning(f"【导致400错误的完整Payload】:\n{json.dumps(request_data, ensure_ascii=False, indent=2)}")
+            else:
+                logger.warning(f"看看之前的对话记录：{self.format_message_dict}")
+                
             return "API请求被拒绝 (400)，请检查后台日志。"
         return None
 
@@ -89,16 +99,16 @@ class MoeLlm:
         is_second_send = False  # 不是第一次发送
         async with session.post(
             url, headers=headers, json=data, proxy=proxy
-        ) as response:
-            if error_msg := await self._check_400_error(response):
+        ) as resp:
+            if error_msg := await self._check_400_error(resp, request_data=data):
                 return False, error_msg, None
             # 确保响应是成功的
-            if response.status == 200:
+            if resp.status == 200:
                 # 异步迭代响应内容
                 MAX_SEGMENTS = self.model_info.get("max_segments", 5)
                 current_segment = 0
                 jump_out = False  # 判断是否跳出循环
-                async for line in response.content:
+                async for line in resp.content:
                     if (
                         not line
                         or line.startswith(b"data: [DONE]")
@@ -181,7 +191,7 @@ class MoeLlm:
                         self.messages_handler.post_process("".join(assistant_result))
                     return True, "".join(assistant_result), None
             else:
-                logger.warning(f"Warning: {response}")
+                logger.warning(f"Warning: {resp}")
         return False, "API请求异常", None
 
     async def none_stream_llm_chat(
@@ -190,7 +200,7 @@ class MoeLlm:
         async with session.post(
             url=url, data=data, headers=headers, ssl=False, proxy=proxy
         ) as resp:
-            if error_msg := await self._check_400_error(resp):
+            if error_msg := await self._check_400_error(resp, request_data=data):
                 return False, error_msg, None
             response = await resp.json()
             if resp.status != 200 or not response:
@@ -311,7 +321,7 @@ class MoeLlm:
             # 替换最后的内容
             send_message_list[-1] = {
                 "role": current_msg["role"],
-                "content": vision_content
+                "content": vision_content,
             }
         current_stream_flag = self.model_info.get("stream", False)
         data = {
@@ -431,13 +441,17 @@ class MoeLlm:
                     return result_text or "api寄！"
                 # 有工具调用，则继续处理
                 if tool_calls:
-                    send_message_list.append(
-                        {
-                            "role": "assistant",
-                            "content": result_text,
-                            "tool_calls": tool_calls,
-                        }
-                    )
+                    # 强力清洗：防止大模型返回空参数导致下一轮请求崩溃
+                    for call in tool_calls:
+                        if not call.get("function", {}).get("arguments") or not str(call["function"]["arguments"]).strip():
+                            call["function"]["arguments"] = "{}"
+
+                    assistant_msg = {
+                        "role": "assistant",
+                        "content": str(result_text) if result_text and str(result_text).strip() else "（正在调用工具）",
+                        "tool_calls": tool_calls,
+                    }
+                    send_message_list.append(assistant_msg)
                     tool_memory_list = []  # 用于长期记忆的文字记录
                     for call in tool_calls:
                         func_name = call["function"]["name"]
@@ -497,7 +511,7 @@ class MoeLlm:
                             {
                                 "role": "tool",
                                 "tool_call_id": call["id"],
-                                "content": tool_result,
+                                "content": tool_result
                             }
                         )
                         tool_memory_list.append(

@@ -21,14 +21,16 @@ async def _safe_mock_send(self: Bot, event, message, **kwargs):
     msg_id = getattr(event, "message_id", None)
     # 检查是否命中当前正在模拟的拦截任务
     if msg_id in _intercepted_messages:
-        text = (
-            message.extract_plain_text()
-            if hasattr(message, "extract_plain_text")
-            else str(message)
-        )
-        if text.strip():
-            _intercepted_messages[msg_id].append(text.strip())
-
+        # 无论 message 是 str 还是 MessageSegment，统一转换为 Message 对象
+        norm_msg = Message(message)
+        text = norm_msg.extract_plain_text()
+        result = text.strip() if text.strip() else "（执行完毕，返回了图片或无文本数据）"
+        
+        # 安全起见，保留长度截断防止极端长文本撑爆上下文
+        if len(result) > 1000:
+            result = result[:1000] + "\n...[由于插件返回结果过长，为防止超出模型限制已自动截断]"
+        _intercepted_messages[msg_id].append(result)
+        logger.debug(f'看看插件返回的内容：{result}')
     # 无论是否被拦截记录，最后都执行原始的发送逻辑，让用户能真实看到插件的输出
     return await _original_bot_send(self, event, message, **kwargs)
 
