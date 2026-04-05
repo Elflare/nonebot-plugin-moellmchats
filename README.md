@@ -329,6 +329,10 @@ your_absolute_path/
 
 ![分段发送与表情包](./imgs/segment_and_emotion.jpg)
 
+**连续工具调用**
+
+![连续工具调用](./imgs/function_call.png)
+
 ## 🔄 处理流程
 
 ```mermaid
