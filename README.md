@@ -331,7 +331,7 @@ your_absolute_path/
 
 **连续工具调用**
 
-![连续工具调用](./imgs/function_call.png)
+![连续工具调用](./imgs/function_call.jpg)
 
 ## 🔄 处理流程
 
