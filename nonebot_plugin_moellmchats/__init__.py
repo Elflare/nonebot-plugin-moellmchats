@@ -297,14 +297,11 @@ refresh_tools_matcher = on_command(
 
 @refresh_tools_matcher.handle()
 async def _():
-    try:
-        tool_manager.refresh_plugins()
-        tool_manager._load_custom_tools()
-        await refresh_tools_matcher.finish(
-            f"工具重载成功！当前已加载 {len(tool_manager.plugin_info)} 个原生插件与 {len(tool_manager.custom_tools)} 个自定义函数。"
-        )
-    except Exception as e:
-        await refresh_tools_matcher.finish(f"工具重载失败：{e}")
+    tool_manager.refresh_plugins()
+    tool_manager.load_custom_tools()
+    await refresh_tools_matcher.finish(
+        f"工具重载成功！当前已加载 {len(tool_manager.plugin_info)} 个原生插件与 {len(tool_manager.custom_tools)} 个自定义函数。"
+    )
 
 
 category_model_matcher = on_command(

@@ -354,8 +354,8 @@ class MoeLlm:
 
         tools_schema = []
         all_plugins_set = set(getattr(self, "required_plugins", [])) | self.messages_handler.get_all_used_plugins()
-        if "web_search" in all_plugins_set and "extract_webpage" in tool_manager.custom_tools:
-            all_plugins_set.add("extract_webpage")
+        all_plugins_set = tool_manager.expand_dependencies(all_plugins_set)
+        logger.debug(f"LLM 最终将要注入的插件集合: {all_plugins_set}")
         all_plugins = list(all_plugins_set)
 
         if all_plugins:
@@ -370,7 +370,7 @@ class MoeLlm:
             send_message_list[0]["content"] += "。特别注意：1. 同步执行：如果你需要调用工具，必须在本次回复的文本(content)中用简短的一句话说明你要做什么，并**在同一次回复中立刻发起工具调用(tool_calls)**！2. 如果用户的请求包含多个步骤逻辑，你必须在获取到前置工具的结果后，**自动且连续地调用下一个工具**，直至彻底完成要求。"
             current_stream_flag = False
             logger.debug("检测到需要调用工具，已自动将本次请求切换为非流式")
-            
+            logger.debug(f"实际发送给大模型的 tools_schema: {tools_schema}")   
         data["stream"] = current_stream_flag
         return data, current_stream_flag
 
