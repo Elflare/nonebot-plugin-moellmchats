@@ -263,19 +263,18 @@ your_absolute_path/
 📌 首次运行后自动生成该文件夹及示例模板 `config/custom_tools/example.py`。
 
 - 支持在文件夹内编写任意 .py 脚本，无需模拟 Nonebot 消息事件，直接由大模型作为原生函数 (Function Calling) 调用。
-- 编写完成后重启或者用命令刷新生效，非常适合写一些轻量级的爬虫、计算器、系统状态查询等扩展工具。
 - 编写完成后，使用指令 `刷新工具` 即可热重载生效，非常适合编写轻量级的爬虫、计算器、系统状态查询等原生扩展工具。
 
 **极简编写示例**：
 
 ```python
+from typing import Annotated
 # 【依赖拓扑声明】
 # 键为“触发条件”，值为“需要一并注入的工具列表”
 # 表示：当大模型被分配了 get_weather 工具时，强制将本脚本中的 extract_webpage 工具也提供给它。
 TOOL_DEPENDENCIES = {
     "get_weather": ["extract_webpage"]
 }
-from typing import Annotated
 
 async def get_weather(
     city: Annotated[str, "需要查询天气的城市名称，如：北京市、上海市"]
@@ -354,6 +353,10 @@ async def get_weather(
 **连续工具调用**
 
 ![连续工具调用](./imgs/function_call.jpg)
+
+**调用其他插件**
+
+![调用其他插件](./imgs/call_other_plugins.jpg)
 
 ## 🔄 处理流程
 
