@@ -13,6 +13,7 @@ from nonebot.adapters.onebot.v11 import (
     Bot,
 )
 import random
+from nonebot import get_driver
 
 require("nonebot_plugin_localstore")
 from .utils import (
@@ -31,7 +32,14 @@ from .tool_manager import tool_manager
 __plugin_meta__ = PluginMetadata(
     name="MoEllm聊天",
     description="感谢llm，机器人变聪明了\n✨ 混合专家模型调度LLM插件 | 混合调度·联网搜索·上下文优化·个性定制·Token节约·更加拟人 ✨",
-    usage="""1.艾特或以bot的名字开头进行对话\n2.用"性格切换xx"来切换性格（每个性格设定绑定每个人账号，不共享）\n3.用"ai xx"来快速调用纯ai助手\n4.超级管理员限定：用切换模型、切换moe、设置moe、设置联网、设置视觉模型、设置函数调用来设置\n5. 用添加插件黑名单/移除插件黑名单来禁用bot的工具调用\n6. 用刷新工具/重载工具/刷新插件来热重载新增的函数""",
+    usage="""1.艾特或以bot的名字开头进行对话
+2.用"性格切换xx"来切换性格（每个性格设定绑定每个人账号，不共享）
+3.用"ai xx"来快速调用纯ai助手
+4.超级管理员限定：用"查看当前配置"、"查看可用模型"、"刷新模型"、"切换模型"、"切换moe"、"设置moe"、"设置联网"、"设置视觉模型"、"设置分类模型"、"设置工具调用"进行系统管理
+5.超级管理员限定：用"添加/移除插件黑名单"来禁用bot的特定工具调用
+6.超级管理员限定：用"刷新工具/重载工具"来热重载新增的函数
+7.超级管理员限定：用"查看插件黑名单/插件黑名单"来查看插件的黑名单列表
+""",
     type="application",
     homepage="https://github.com/Elflare/nonebot-plugin-moellmchats",
     supported_adapters={"~onebot.v11"},
@@ -73,7 +81,7 @@ async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
                 await temperament_switch_matcher.finish(f"已切换性格为{temp}")
             else:
                 await temperament_switch_matcher.finish(
-                    "出错了，搞快喊机器人主人来修复一下吧~"
+                    "出错了，赶快喊机器人主人来修复一下吧~"
                 )
     await temperament_switch_matcher.finish(
         f"只有{temperament_manager.get_temperaments_keys()}中的性格可以切换"
@@ -91,19 +99,51 @@ async def _(event: GroupMessageEvent):
     await temperament_check_matcher.finish(temperament_manager.get_all_temperaments())
 
 
-check_model_matcher = on_fullmatch("查看模型", priority=10, block=True)
+# 1. 查看看看库里有什么模型可以切
+check_model_matcher = on_command(
+    "查看可用模型", aliases={"查看模型"}, permission=SUPERUSER, priority=10, block=True
+)
 
 
 @check_model_matcher.handle()
-async def _(event: GroupMessageEvent):
-    await check_model_matcher.finish(model_selector.get_model_config())
+async def _(event: MessageEvent, args: Message = CommandArg()):
+    # 允许带参数查询特定供应商，例如：查看模型 deepseek
+    provider = args.extract_plain_text().strip()
+    result = model_selector.get_formatted_model_list(provider if provider else None)
+    await check_model_matcher.finish(result)
+
+
+# 2. 查看当前机器人身上挂着哪些配置
+check_config_matcher = on_fullmatch(
+    ("查看当前配置", "查看配置"), permission=SUPERUSER, priority=10, block=True
+)
+
+
+@check_config_matcher.handle()
+async def _(event: MessageEvent):
+    cfg = model_selector.model_config
+
+    # 构建美观的配置面板
+    msg = (
+        "✨ 当前大模型运行配置 ✨\n"
+        f"▪ 基础聊天模型: {cfg.get('selected_model')}\n"
+        f"▪ 视觉专用模型: {cfg.get('vision_model') or '未设置 (默认走基础模型)'}\n"
+        f"▪ 意图分类模型: {cfg.get('category_model')}\n"
+        f"▪ 启用MoE调度: {'✅开启' if cfg.get('use_moe') else '❌关闭'}\n"
+        f"  - 难度0: {cfg.get('moe_models', {}).get('0')}\n"
+        f"  - 难度1: {cfg.get('moe_models', {}).get('1')}\n"
+        f"  - 难度2: {cfg.get('moe_models', {}).get('2')}\n"
+        f"▪ 启用联网搜索: {'✅开启' if cfg.get('use_web_search') else '❌关闭'}\n"
+        f"▪ 启用函数调用: {'✅开启' if cfg.get('use_tools', False) else '❌关闭'}"
+    )
+    await check_config_matcher.finish(msg)
 
 
 model_matcher = on_command("切换模型", permission=SUPERUSER, priority=10, block=True)
 
 
 @model_matcher.handle()
-async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
+async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     model_name = args.extract_plain_text().strip()
     result = model_selector.set_chat_model(model_name)
     await model_matcher.finish(result)
@@ -113,7 +153,7 @@ set_moe_matcher = on_command("设置moe", permission=SUPERUSER, priority=10, blo
 
 
 @set_moe_matcher.handle()
-async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
+async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     is_moe = args.extract_plain_text().strip()
     if is_moe not in ["开", "关", "0", "1"]:
         await model_matcher.finish("参数错误，格式为：设置moe 开、关、1、0")
@@ -131,7 +171,7 @@ set_web_search_matcher = on_command(
 
 
 @set_web_search_matcher.handle()
-async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
+async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     is_web_search = args.extract_plain_text().strip()
     if is_web_search not in ["开", "关", "0", "1"]:
         await model_matcher.finish("参数错误，格式为：设置联网 开、关、1、0")
@@ -147,7 +187,7 @@ moe_matcher = on_command("切换moe", permission=SUPERUSER, priority=10, block=T
 
 
 @moe_matcher.handle()
-async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
+async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     try:
         difficulty, model_name = args.extract_plain_text().split()
         result = model_selector.set_moe_model(model_name, difficulty)
@@ -166,7 +206,7 @@ vision_model_matcher = on_command(
 
 
 @vision_model_matcher.handle()
-async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
+async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     model_name = args.extract_plain_text().strip()
     result = model_selector.set_vision_model(model_name)
     await vision_model_matcher.finish(result)
@@ -255,7 +295,7 @@ set_use_tools_matcher = on_command(
 
 
 @set_use_tools_matcher.handle()
-async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
+async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     is_use_tools = args.extract_plain_text().strip()
     if is_use_tools not in ["开", "关", "0", "1"]:
         await set_use_tools_matcher.finish(
@@ -275,7 +315,7 @@ manage_blacklist_matcher = on_command(
 
 
 @manage_blacklist_matcher.handle()
-async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
+async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     plugin_name = args.extract_plain_text().strip()
     if not plugin_name:
         await manage_blacklist_matcher.finish("请提供插件名，如：添加黑名单 xxx")
@@ -284,6 +324,30 @@ async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
     result = model_selector.manage_tool_blacklist(action, plugin_name)
     tool_manager.refresh_plugins()
     await manage_blacklist_matcher.finish(result)
+
+
+check_blacklist_matcher = on_command(
+    "插件黑名单",
+    aliases={"查看插件黑名单"},
+    permission=SUPERUSER,
+    priority=10,
+    block=True,
+)
+
+
+@check_blacklist_matcher.handle()
+async def _(event: MessageEvent):
+    blacklist = model_selector.get_tool_blacklist()
+    if not blacklist:
+        await check_blacklist_matcher.finish(
+            "当前插件黑名单为空，大模型可调用所有已加载且未被过滤的工具。"
+        )
+
+    lines = ["🚫 当前插件调用黑名单："]
+    for plugin in blacklist:
+        lines.append(f"  - {plugin}")
+
+    await check_blacklist_matcher.finish("\n".join(lines))
 
 
 refresh_tools_matcher = on_command(
@@ -314,10 +378,34 @@ category_model_matcher = on_command(
 
 
 @category_model_matcher.handle()
-async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
+async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     model_name = args.extract_plain_text().strip()
     result = model_selector.set_category_model(model_name)
     await category_model_matcher.finish(result)
+
+
+# 机器人启动时自动获取并刷新模型缓存
+@get_driver().on_startup
+async def _auto_fetch_models():
+    await model_selector.fetch_models_from_providers()
+
+
+# 超级管理员可手动触发模型刷新
+refresh_models_matcher = on_command(
+    "刷新模型", aliases={"刷新模型列表"}, permission=SUPERUSER, priority=10, block=True
+)
+
+
+@refresh_models_matcher.handle()
+async def _():
+    await refresh_models_matcher.send(
+        "正在重新读取本地配置并拉取各服务商模型列表，请稍候..."
+    )
+    model_selector.load_providers()  # 重新读取 TOML 配置
+    await model_selector.fetch_models_from_providers()  # 重新请求 API 并重载
+    await refresh_models_matcher.finish(
+        f"更新完毕！当前系统共加载了 {len(model_selector.models)} 个模型。"
+    )
 
 
 # 优先级10，不会向下阻断，条件：戳一戳bot触发
