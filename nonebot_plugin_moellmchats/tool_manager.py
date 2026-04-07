@@ -46,6 +46,7 @@ class ToolManager:
         # 如果是首次创建文件夹，且模板文件不存在，则生成网页提取模板
         if is_first_time_dir or not list(self.custom_tools_dir.glob("*.py")):
             template_content = '''
+"""
 这是一个自定义大模型工具（Function Calling）的示例文件。
 你可以参考此模板，在此目录下编写自己的原生 Python 函数。
 
