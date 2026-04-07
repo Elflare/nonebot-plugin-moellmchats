@@ -363,21 +363,11 @@ stream = false  # 不支持流式的模型可单独关闭
         self._write_config(self.model_config_file, self.model_config)
         return f"已切换聊天模型为 {model_name}"
 
-    def set_moe_model(self, model_name: str, difficulty: str) -> str:
-        # 设置MOE模型，model_name为models.json中的键，difficulty为0、1或2
-        model_name = self.resolve_model_name(model_name)
-        if not model_name:
-            return f"模型 '{model_name}' 不存在！" + self.get_formatted_model_list()
-
-        if difficulty not in ["0", "1", "2"]:
-            return "difficulty只能是0、1、2中的一个"
-
-        # 更新MOE模型配置
-        self.model_config["moe_models"][difficulty] = model_name
-
-        # 更新配置文件
+    def set_moe(self, is_moe: bool = True) -> str:
+        """控制是否启用混合专家模型调度 (MoE)"""
+        self.model_config["use_moe"] = is_moe
         self._write_config(self.model_config_file, self.model_config)
-        return f"已将{difficulty}的模型切换为{model_name}的{self.models[model_name]['model']}"
+        return "✅ 已开启 MoE 混合调度" if is_moe else "❌ 已关闭 MoE 混合调度"
 
     def set_vision_model(self, model_name: str) -> str:
         # 设置视觉专用模型，model_name为models.json中的键
