@@ -36,7 +36,7 @@ __plugin_meta__ = PluginMetadata(
     usage="""1.艾特或以bot的名字开头进行对话
 2.用"性格切换xx"来切换性格（每个性格设定绑定每个人账号，不共享）
 3.用"ai xx"来快速调用纯ai助手
-4.超级管理员限定：用"查看配置"、"查看模型"、"刷新模型"、"切换模型"、"切换moe"、"设置moe"、"设置联网"、"设置视觉模型"、"设置分类模型"、"设置工具调用"进行系统管理
+4.超级管理员限定：用"查看配置"、"查看模型 [搜索关键词]"(支持多关键词模糊搜索)、"刷新模型"、"切换模型"、"切换moe"、"设置moe"、"设置联网"、"设置视觉模型"、"设置分类模型"、"设置工具调用"进行系统管理
 5.超级管理员限定：用"添加/移除插件黑名单"来禁用bot的特定工具调用
 6.超级管理员限定：用"刷新工具/重载工具"来热重载新增的函数
 7.超级管理员限定：用"查看插件黑名单/插件黑名单"来查看插件的黑名单列表
@@ -121,11 +121,10 @@ check_model_matcher = on_command(
 
 @check_model_matcher.handle()
 async def _(event: MessageEvent, args: Message = CommandArg()):
-    # 允许带参数查询特定供应商，例如：查看模型 deepseek
-    provider = args.extract_plain_text().strip()
-    result = model_selector.get_formatted_model_list(provider if provider else None)
+    # 允许带多参数模糊搜索，例如：查看模型 deepseek coder
+    query = args.extract_plain_text().strip()
+    result = model_selector.get_formatted_model_list(query if query else None)
     await check_model_matcher.finish(result)
-
 
 # 2. 查看当前机器人身上挂着哪些配置
 check_config_matcher = on_fullmatch(

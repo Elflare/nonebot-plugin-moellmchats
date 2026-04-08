@@ -25,7 +25,7 @@ class ModelSelector:
 
         self.models = {}
         self.providers = {}
-
+        self.global_default = {}
         # 加载配置
         self.load_providers()
         self._load_all_models()
@@ -78,6 +78,12 @@ class ModelSelector:
 # proxy: [可选] 该服务商的全局代理
 # models: [可选] 手动补充的模型列表。若API不支持 /models 自动获取，或获取不全时可在这里手动指定作为补充。
 
+# 【全局默认配置】（所有供应商的所有模型均默认继承此设置，垫底优先级）
+[global_default]
+stream = true
+is_segment = true
+max_segments = 5
+
 [providers.deepseek]
 base_url = "https://api.deepseek.com"
 api_key = "sk-xxxxxx"
@@ -88,15 +94,27 @@ base_url = "https://api.openai.com/v1"
 api_key = "sk-xxxxxx"
 proxy = "http://127.0.0.1:7890"
 
-# 【可选】模型高级配置：对特定模型（无论是自动获取的还是上面手动填写的）进行精细化参数覆写
-[providers.openai.model_configs.gpt-4o]
+# ====================================================
+# 【高级参数配置】支持四级继承：全局默认 < 供应商默认 < 分组配置 < 独立配置
+# 以下参数设置将自动合并到模型最终的配置字典中
+# ====================================================
+
+# 【用法一：供应商默认配置】（覆盖 global_default）
+# 该供应商下*所有*拉取到或手动填写的模型，均默认应用此配置
+[providers.openai.default_config]
+temperature = 1.0
+
+# 【用法二：批量分组配置】（覆盖前两项）
+# 将需要相同配置的模型名称放入 models 数组，统一应用参数
+[[providers.openai.config_groups]]
+models = ["gpt-4o", "gpt-4-turbo"]
 temperature = 1.2
-stream = true
-is_segment = true
 max_segments = 5
+
+# 【用法三：单模型独立配置】（最高优先级，覆盖一切）
+[providers.openai.model_configs."o1-preview"]
+stream = false  # 不支持流式的模型单独关闭
 json_mode = true  # <-- 可在此自定义json结构化输出配置，以方便分类模型使用。聊天模型不影响
-[providers.openai.model_configs.o1-preview]
-stream = false  # 不支持流式的模型可单独关闭
 """
             self.providers_file.parent.mkdir(parents=True, exist_ok=True)
             with open(self.providers_file, "w", encoding="utf-8") as f:
@@ -106,6 +124,7 @@ stream = false  # 不支持流式的模型可单独关闭
             with open(self.providers_file, "rb") as f:
                 config = tomllib.load(f)
                 self.providers = config.get("providers", {})
+                self.global_default = config.get("global_default", {})
         except Exception as e:
             logger.error(f"解析 providers.toml 失败: {e}")
 
@@ -146,7 +165,10 @@ stream = false  # 不支持流式的模型可单独关闭
             else:
                 keys = [self._normalize_key(raw_key)] if raw_key else []
             proxy = p_info.get("proxy")
-            model_configs = p_info.get("model_configs", {})
+            # 获取三种不同级别的配置
+            default_config = p_info.get("default_config", {})  # 1. 供应商全局默认配置
+            config_groups = p_info.get("config_groups", [])    # 2. 分组批量配置
+            model_configs = p_info.get("model_configs", {})    # 3. 单模型独立配置
 
             # 收集该供应商下的所有模型ID（去重）
             m_ids = set()
@@ -154,7 +176,9 @@ stream = false  # 不支持流式的模型可单独关闭
                 m_ids.update(cached_models[provider])
             m_ids.update(p_info.get("models", []))
             m_ids.update(model_configs.keys())  # 只要写了独立配置的，也隐式作为模型加入
-
+            # 将分组配置里的模型名也加入集合
+            for group in config_groups:
+                m_ids.update(group.get("models", []))
             for mid in m_ids:
                 # 基础信息
                 model_data = {
@@ -167,7 +191,21 @@ stream = false  # 不支持流式的模型可单独关闭
                 if proxy:
                     model_data["proxy"] = proxy
 
-                # 模型级别的覆写配置（会覆盖同名键）
+                # 优先级 0：应用【全局】默认配置（垫底，所有供应商的底座）
+                if getattr(self, "global_default", None):
+                    model_data.update(self.global_default)
+                
+                # 优先级 1：应用【当前供应商】默认配置（覆盖全局）
+                if default_config:
+                    model_data.update(default_config)
+                    
+                # 优先级 2：应用【分组】配置（覆盖供应商和全局）
+                for group in config_groups:
+                    if mid in group.get("models", []):
+                        g_conf = {k: v for k, v in group.items() if k != "models"}
+                        model_data.update(g_conf)
+                
+                # 优先级 3：应用【单模型】独立配置（最高优先级，绝对统治）
                 if mid in model_configs:
                     model_data.update(model_configs[mid])
 
@@ -399,20 +437,28 @@ stream = false  # 不支持流式的模型可单独关闭
         self._write_config(self.model_config_file, self.model_config)
         return f"已切换总结模型为 {model_name}"
 
-    def get_formatted_model_list(self, provider_filter: str = None) -> str:
-        """获取美化后的可用模型列表，带有序号编号"""
+    def get_formatted_model_list(self, search_query: str = None) -> str:
+        """获取美化后的可用模型列表，支持多关键词模糊搜索"""
         sorted_names = self.get_sorted_model_names()
         grouped_models = defaultdict(list)
 
-        # 记录每个模型及其全局唯一序号 (编号从1开始)
+        # 解析搜索词：转小写并按空格拆分为多个关键词
+        keywords = search_query.lower().split() if search_query else []
+
         for index, mid in enumerate(sorted_names, 1):
             info = self.models[mid]
-            grouped_models[info.get("provider", "未知")].append((index, mid))
+            provider = info.get("provider", "未知")
+            
+            # 如果存在关键词，则必须【所有】关键词都出现在供应商名或模型名中才保留
+            if keywords:
+                search_target = f"{provider} {mid}".lower()
+                if not all(kw in search_target for kw in keywords):
+                    continue
 
-        if provider_filter:
-            if provider_filter not in grouped_models:
-                return f"未找到名为 '{provider_filter}' 的供应商。\n当前存在的供应商有：{', '.join(grouped_models.keys())}"
-            grouped_models = {provider_filter: grouped_models[provider_filter]}
+            grouped_models[provider].append((index, mid))
+
+        if not grouped_models:
+            return f"没有找到包含关键词 '{search_query}' 的模型或供应商哦~"
 
         lines = ["✨ 当前可用模型列表 ✨"]
         for provider, m_list in grouped_models.items():
