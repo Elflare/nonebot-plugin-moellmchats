@@ -288,7 +288,7 @@ if config_parser.get_config("fastai_enabled"):
     )
 
     @ai_matcher.handle()
-    async def _(bot: Bot, event: GroupMessageEvent, args: Message = CommandArg()):
+    async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
         if args.extract_plain_text().strip():
             format_message_dict = await format_message(event, bot)
             await handle_llm(bot, event, ai_matcher, format_message_dict, is_ai=True)

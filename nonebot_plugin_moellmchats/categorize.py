@@ -41,13 +41,17 @@ class Categorize:
 用户输入："[图片]帮我看看这个图里是什么"
 输出：{{"difficulty": "1", "vision_required": true, "required_plugins": []}}
 """
-
+        # 判断是否开启 MoE，若未开启（但因为开启了工具走到这里），则使用默认模型（selected_model）
+        if model_selector.get_moe():
+            category_model_config = model_selector.get_model("category_model")
+        else:
+            category_model_config = model_selector.get_model("selected_model")
+            logger.debug("未开启MoE，使用默认模型进行工具/联网/视觉判断分类")
         headers = {
             "Authorization": model_selector.get_model("category_model")["key"],
             "Content-Type": "application/json",
             "Accept-Encoding": "identity",
         }
-        category_model_config = model_selector.get_model("category_model")       
         for try_times in range(2):
             try:
                 raw_result = ""

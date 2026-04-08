@@ -274,6 +274,7 @@ class MoeLlm:
 
     def prompt_handler(self):
         """处理system prompt，表情包和上下文相关"""
+        emotion_prompt = ""
         if self.temperament != "ai助手":  # 不为ai助手才加上下文
             # 表情包
             if (
@@ -284,23 +285,25 @@ class MoeLlm:
             ):
                 self.emotion_flag = True
                 emotion_prompt = f"。回复时根据回答内容，发送表情包，每次回复最多发一个表情包，格式为中括号+表情包名字，如：[表情包名字]。可选表情有{get_emotions_names()}"
-            else:
-                emotion_prompt = ""
         # 判断是否为群聊
         if hasattr(self.event, "group_id"):
             self.prompt += f"。现在你在一个qq群中,你只需回复我{emotion_prompt}。群里近期聊天内容，冒号前面是id，后面是内容：\n"
             context_dict_ = list(context_dict[self.event.group_id])[:-1]
             self.prompt += "\n".join(context_dict_)
         else:
-            self.prompt += f"。现在我们处于一对一私聊环境,你只需回复我{emotion_prompt}。"
+            self.prompt += (
+                f"。现在我们处于一对一私聊环境,你只需回复我{emotion_prompt}。"
+            )
         tool_memory_context = []
         for entity in self.messages_handler.messages_entity_list:
             if entity.tool_memory:
                 tool_memory_context.append(entity.tool_memory)
-        
+
         # 将所有历史工具记录按照时间顺序拼接，作为系统提示注入
         if tool_memory_context:
-            self.prompt += "\n\n【系统提示：历史工具执行记录】\n" + "\n".join(tool_memory_context)
+            self.prompt += "\n\n【系统提示：历史工具执行记录】\n" + "\n".join(
+                tool_memory_context
+            )
 
     async def _prepare_model_info(self, plain: str):
         """预处理：获取模型信息、处理难度分类与视觉判断"""
@@ -320,29 +323,27 @@ class MoeLlm:
                     f"难度：{difficulty}, 视觉：{vision_required}, 需要插件：{required_plugins}"
                 )
                 self.required_plugins = required_plugins
-
-                if model_selector.get_moe():
-                    if vision_required and self.messages_handler.current_images:
-                        vision_model_key = model_selector.model_config.get(
-                            "vision_model"
+                # 无论是否开启MoE，只要触发视觉且有图片，优先走视觉模型
+                if vision_required and self.messages_handler.current_images:
+                    vision_model_key = model_selector.model_config.get("vision_model")
+                    if vision_model_key:
+                        self.model_info = model_selector.get_model("vision_model")
+                        logger.info(
+                            f"触发视觉任务，切换至视觉模型: {self.model_info['model']}"
                         )
-                        if vision_model_key:
-                            self.model_info = model_selector.get_model("vision_model")
-                            logger.info(
-                                f"触发视觉任务，切换至视觉模型: {self.model_info['model']}"
-                            )
-                        else:
-                            logger.info(
-                                "触发视觉任务，但未配置 vision_model 字段，退回普通模型"
-                            )
+                    else:
+                        logger.info(
+                            "触发视觉任务，但未配置 vision_model 字段，退回普通模型/MoE模型"
+                        )
+                        if model_selector.get_moe():
                             self.model_info = model_selector.get_moe_current_model(
                                 difficulty
                             )
-                    else:
-                        self.model_info = model_selector.get_moe_current_model(
-                            difficulty
-                        )
+                # 纯文本任务，若开启了MoE，则分配对应难度的模型
+                elif model_selector.get_moe():
+                    self.model_info = model_selector.get_moe_current_model(difficulty)
 
+        # 兜底：既没触发视觉，也没开启MoE，或者啥都没开启（原逻辑），使用默认模型
         if not hasattr(self, "model_info") or not self.model_info:
             self.model_info = model_selector.get_model("selected_model")
         logger.info(f"模型选择为：{self.model_info['model']}")

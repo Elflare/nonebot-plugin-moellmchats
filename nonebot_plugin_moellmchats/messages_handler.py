@@ -15,6 +15,7 @@ class MessagesEntity:
         self.assistant_msg = None
         # 调用的工具
         self.used_plugins = set()
+        self.tool_memory = ""
 
     def add_user_msg(self, user_msg: dict):
         self.user_msg = user_msg
@@ -93,17 +94,20 @@ class MessagesHandler:
             if "content" not in ast_msg or not ast_msg["content"]:
                 ast_msg["content"] = "（执行完毕）"
             result.append(ast_msg)
-                
+
         result.append(self.messages_entity.get_user_msg())
         return result
 
     # 后处理
-    def post_process(self, assistant_msg: str = None, tool_calls: list = None):
-        # 核心修复：即使大模型完全没说话，也要强制塞入占位符，保证一问一答上下文不缺失且不为空
+    def post_process(self, assistant_msg: str = None, tool_memory: str = ""):
         if not assistant_msg or not assistant_msg.strip():
             assistant_msg = "（已完成操作）"
-            
+
         self.messages_entity.add_assistant_msg(
             {"role": "assistant", "content": assistant_msg}
         )
-        messages_dict[self.user_id].append(self.messages_entity)
+        self.messages_entity.tool_memory = tool_memory
+
+        # 避免在流式输出与结尾总结时被重复 append
+        if self.messages_entity not in messages_dict[self.user_id]:
+            messages_dict[self.user_id].append(self.messages_entity)

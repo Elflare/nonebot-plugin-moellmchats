@@ -236,7 +236,6 @@ stream = false  # 不支持流式的模型可单独关闭
     "model": "deepseek-chat",
     "temperature": 1.5,
     "max_tokens": 1024,
-    "proxy": "http://127.0.0.1:7890",
     "stream": True, // 是否流式响应
     "is_segment": True, // 是否开启分段发送（只有stream为true才会生效）
     "max_segments": 5, // 分段发送最大段数（开启分段发送后，为了防止刷屏，设置发送上限，超过后会直接停止发送）
@@ -253,6 +252,7 @@ stream = false  # 不支持流式的模型可单独关闭
     "url": "https://api.openai.com/v1/chat/completions",
     "key": "Bearer sk-xxx",
     "model": "gpt-4o",
+    "proxy": "http://127.0.0.1:7890",
     "is_vision": true, // 开启多模态识图能力（仅当模型支持视觉时开启）
     "stream": true
   }
@@ -458,6 +458,7 @@ flowchart TD
 - 现在可以设置允许超级管理员私聊bot（方便调用如执行shell命令之类的工具）
 - 现在可以在模型设置中开启结构化输出，方便分类模型使用
 - 现在第一次安装后，不再生成旧版`models.json`文件。
+- 现在没有开启moe的情况下开启了工具调用，会使用默认模型进行选择工具。有图片的情况下会直接选择视觉模型
 
 
 ### 2026-04-07 v0.19.0
