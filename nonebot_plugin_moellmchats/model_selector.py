@@ -9,6 +9,7 @@ import nonebot_plugin_localstore as store
 from nonebot.log import logger
 import aiohttp
 from collections import defaultdict
+import random
 
 config_path: Path = store.get_plugin_config_dir()
 
@@ -47,12 +48,33 @@ class ModelSelector:
         key = key.strip()
         return key if key.lower().startswith("bearer ") else f"Bearer {key}"
 
+    def _get_random_key(self, model_data: dict) -> str:
+        """Key 提取与随机方法，保证只返回字符串"""
+        pool = []
+        # 1. 提取新版规范的 keys 列表
+        if "keys" in model_data and isinstance(model_data["keys"], list):
+            pool.extend(model_data["keys"])
+        # 2. 提取旧版的 key 字段（兼容老 JSON 中误写的 list 或 单个字符串）
+        if "key" in model_data:
+            raw_key = model_data["key"]
+            if isinstance(raw_key, list):
+                pool.extend(raw_key)
+            elif isinstance(raw_key, str) and raw_key.strip():
+                pool.append(raw_key)
+        # 3. 过滤空值并去重
+        valid_keys = list(set([k for k in pool if k]))
+        if not valid_keys:
+            return ""
+        # 随机抽取并严格确保拥有 Bearer 前缀
+        chosen_key = random.choice(valid_keys)
+        return self._normalize_key(chosen_key)
+
     def load_providers(self):
         """初始化并读取 providers.toml，如果不存在则自动生成模板"""
         if not self.providers_file.exists():
             template = """# AI服务商配置文件
 # base_url: 基础API地址（直接写Base URL即可，程序会自动补全 /chat/completions 及 /models）
-# api_key: 你的API密钥（无需手动写 Bearer ，程序会自动补全）
+# api_key: 你的API密钥（无需手动写 Bearer ，程序会自动补全）。支持填入单个字符串，或字符串列表实现随机轮询，如 ["sk-key1", "sk-key2"]
 # proxy: [可选] 该服务商的全局代理
 # models: [可选] 手动补充的模型列表。若API不支持 /models 自动获取，或获取不全时可在这里手动指定作为补充。
 
@@ -72,7 +94,7 @@ temperature = 1.2
 stream = true
 is_segment = true
 max_segments = 5
-
+json_mode = true  # <-- 可在此自定义json结构化输出配置，以方便分类模型使用。聊天模型不影响
 [providers.openai.model_configs.o1-preview]
 stream = false  # 不支持流式的模型可单独关闭
 """
@@ -97,6 +119,11 @@ stream = false  # 不支持流式的模型可单独关闭
                     old_models = json.load(f)
                     for mid, info in old_models.items():
                         info["provider"] = "旧版配置(models.json)"
+                        if "key" in info:
+                            raw_key = info["key"]
+                            info["keys"] = (
+                                [raw_key] if not isinstance(raw_key, list) else raw_key
+                            )
                         self.models[mid] = info
             except Exception as e:
                 logger.error(f"读取 models.json 失败: {e}")
@@ -113,7 +140,11 @@ stream = false  # 不支持流式的模型可单独关闭
         # 2. 合并并加载 TOML 中的模型及配置
         for provider, p_info in self.providers.items():
             url = self._normalize_url(p_info.get("base_url", ""))
-            key = self._normalize_key(p_info.get("api_key", ""))
+            raw_key = p_info.get("api_key", "")
+            if isinstance(raw_key, list):
+                keys = [self._normalize_key(k) for k in raw_key if k]
+            else:
+                keys = [self._normalize_key(raw_key)] if raw_key else []
             proxy = p_info.get("proxy")
             model_configs = p_info.get("model_configs", {})
 
@@ -128,7 +159,7 @@ stream = false  # 不支持流式的模型可单独关闭
                 # 基础信息
                 model_data = {
                     "url": url,
-                    "key": key,
+                    "key": keys,
                     "model": mid,
                     "provider": provider,
                 }
@@ -150,11 +181,16 @@ stream = false  # 不支持流式的模型可单独关闭
         ) as session:
             for provider, info in self.providers.items():
                 base_url = info.get("base_url")
-                api_key = info.get("api_key")
+                raw_key = info.get("api_key")
                 proxy = info.get("proxy")  # 获取服务商配置的代理
 
-                if not base_url or not api_key:
+                if not base_url or not raw_key:
                     continue
+
+                # 如果是列表则随机抽选一个，否则直接使用
+                api_key = (
+                    random.choice(raw_key) if isinstance(raw_key, list) else raw_key
+                )
 
                 url = self._normalize_url(base_url, "/models")
                 headers = {"Authorization": self._normalize_key(api_key)}
@@ -185,37 +221,6 @@ stream = false  # 不支持流式的模型可单独关闭
         # 刷新内存
         self._load_all_models()
         logger.info(f"模型列表更新完毕，当前可用模型总数：{len(self.models)}")
-
-    def _load_models(self):
-        # 读取models.json文件，获取多个模型的配置
-        if self.models_file.exists():
-            with open(self.models_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        else:
-            # 创建默认
-            default_models = {
-                "dpsk-chat": {
-                    "url": "https://api.deepseek.com/chat/completions",
-                    "key": "Bearer xxx",
-                    "model": "deepseek-chat",
-                    "temperature": 1.0,
-                    "max_tokens": 1024,
-                    "proxy": "http://127.0.0.1:7890",
-                    "stream": True,
-                    "is_segment": True,
-                    "max_segments": 5,
-                },
-                "dpsk-r1": {
-                    "url": "https://api.deepseek.com/chat/completions",
-                    "key": "Bearer xxxx",
-                    "model": "deepseek-reasoner",
-                    "top_k": 5,
-                    "top_p": 1.0,
-                },
-            }
-            self.models_file.parent.mkdir(parents=True, exist_ok=True)
-            self.models_file.touch()
-            self._write_config(self.models_file, default_models)
 
     def get_model_config(self):
         return json.dumps(self.model_config, indent=4, ensure_ascii=False)
@@ -275,15 +280,20 @@ stream = false  # 不支持流式的模型可单独关闭
         # 获取单个模型的配置
         selected_model = self.model_config.get(key)
         if selected_model and selected_model in self.models:
-            return self.models[selected_model]
+            model_data = self.models[selected_model].copy()
+            model_data["key"] = self._get_random_key(model_data)
+            return model_data
+        return None
 
     def get_moe_current_model(self, difficulty: str) -> dict:
         # 获取当前MOE模型的配置
         moe_models = self.model_config["moe_models"]
         model_name = moe_models.get(difficulty)
         if model_name and model_name in self.models:
-            # 返回模型的完整配置
-            return self.models[model_name]
+            model_data = self.models[model_name].copy()
+            model_data["key"] = self._get_random_key(model_data)
+            return model_data
+        return None
 
     def get_tool_blacklist(self) -> list:
         return self.model_config.get("tool_blacklist", [])
@@ -291,7 +301,10 @@ stream = false  # 不支持流式的模型可单独关闭
     def set_moe_model(self, model_query: str, difficulty: str) -> str:
         model_name = self.resolve_model_name(model_query)
         if not model_name:
-            return f"找不到编号或名称为 '{model_query}' 的模型！\n" + self.get_formatted_model_list()
+            return (
+                f"找不到编号或名称为 '{model_query}' 的模型！\n"
+                + self.get_formatted_model_list()
+            )
 
         if difficulty not in ["0", "1", "2"]:
             return "difficulty只能是 0、1、2 中的一个"
@@ -340,24 +353,14 @@ stream = false  # 不支持流式的模型可单独关闭
             return "该插件不在黑名单中"
         return "无效操作"
 
-    def set_summary_model(self, model_name: str) -> str:
-        # 设置单个模型，model_name为models.json中的键
-        model_name = self.resolve_model_name(model_name)
-        if not model_name:
-            return f"模型 '{model_name}' 不存在！" + self.get_formatted_model_list()
-
-        # 设置selected_model
-        self.model_config["summary_model"] = model_name
-
-        # 更新配置文件
-        self._write_config(self.model_config_file, self.model_config)
-        return f"已切换总结模型为{model_name}的{self.models[model_name]['model']}"
-
     def set_chat_model(self, model_name: str) -> str:
         # 使用解析器处理编号或名称
         model_name = self.resolve_model_name(model_name)
         if not model_name:
-            return f"找不到编号或名称为 '{model_name}' 的模型！\n" + self.get_formatted_model_list()
+            return (
+                f"找不到编号或名称为 '{model_name}' 的模型！\n"
+                + self.get_formatted_model_list()
+            )
 
         self.model_config["selected_model"] = model_name
         self._write_config(self.model_config_file, self.model_config)
@@ -382,11 +385,25 @@ stream = false  # 不支持流式的模型可单独关闭
         self._write_config(self.model_config_file, self.model_config)
         return f"已切换视觉模型为{model_name}的{self.models[model_name]['model']}"
 
+    def set_summary_model(self, model_query: str) -> str:
+        # 使用解析器处理编号或名称
+        model_name = self.resolve_model_name(model_query)
+        if not model_name:
+            return (
+                f"找不到编号或名称为 '{model_query}' 的模型！\n"
+                + self.get_formatted_model_list()
+            )
+
+        # 设置 summary_model
+        self.model_config["summary_model"] = model_name
+        self._write_config(self.model_config_file, self.model_config)
+        return f"已切换总结模型为 {model_name}"
+
     def get_formatted_model_list(self, provider_filter: str = None) -> str:
         """获取美化后的可用模型列表，带有序号编号"""
         sorted_names = self.get_sorted_model_names()
         grouped_models = defaultdict(list)
-        
+
         # 记录每个模型及其全局唯一序号 (编号从1开始)
         for index, mid in enumerate(sorted_names, 1):
             info = self.models[mid]

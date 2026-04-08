@@ -233,14 +233,8 @@ class MoeLlm:
 
                 if result := result.strip():
                     result = await self.send_emotion_message(result)
-                    if not self.is_objective:
-                        self.messages_handler.post_process(
-                            "".join(assistant_result) + result
-                        )
                     return True, "".join(assistant_result) + result, None
                 elif is_second_send:
-                    if not self.is_objective:
-                        self.messages_handler.post_process("".join(assistant_result))
                     return True, "".join(assistant_result), None
             else:
                 logger.warning(f"Warning: {resp}")
@@ -292,10 +286,21 @@ class MoeLlm:
                 emotion_prompt = f"。回复时根据回答内容，发送表情包，每次回复最多发一个表情包，格式为中括号+表情包名字，如：[表情包名字]。可选表情有{get_emotions_names()}"
             else:
                 emotion_prompt = ""
+        # 判断是否为群聊
+        if hasattr(self.event, "group_id"):
             self.prompt += f"。现在你在一个qq群中,你只需回复我{emotion_prompt}。群里近期聊天内容，冒号前面是id，后面是内容：\n"
-            # 去除群聊最新的对话，因为在用户的上下文中
             context_dict_ = list(context_dict[self.event.group_id])[:-1]
             self.prompt += "\n".join(context_dict_)
+        else:
+            self.prompt += f"。现在我们处于一对一私聊环境,你只需回复我{emotion_prompt}。"
+        tool_memory_context = []
+        for entity in self.messages_handler.messages_entity_list:
+            if entity.tool_memory:
+                tool_memory_context.append(entity.tool_memory)
+        
+        # 将所有历史工具记录按照时间顺序拼接，作为系统提示注入
+        if tool_memory_context:
+            self.prompt += "\n\n【系统提示：历史工具执行记录】\n" + "\n".join(tool_memory_context)
 
     async def _prepare_model_info(self, plain: str):
         """预处理：获取模型信息、处理难度分类与视觉判断"""
@@ -311,21 +316,33 @@ class MoeLlm:
                 return category_result
             if isinstance(category_result, tuple):
                 difficulty, vision_required, required_plugins = category_result
-                logger.info(f"难度：{difficulty}, 视觉：{vision_required}, 需要插件：{required_plugins}")
+                logger.info(
+                    f"难度：{difficulty}, 视觉：{vision_required}, 需要插件：{required_plugins}"
+                )
                 self.required_plugins = required_plugins
-                
+
                 if model_selector.get_moe():
                     if vision_required and self.messages_handler.current_images:
-                        vision_model_key = model_selector.model_config.get("vision_model")
+                        vision_model_key = model_selector.model_config.get(
+                            "vision_model"
+                        )
                         if vision_model_key:
                             self.model_info = model_selector.get_model("vision_model")
-                            logger.info(f"触发视觉任务，切换至视觉模型: {self.model_info['model']}")
+                            logger.info(
+                                f"触发视觉任务，切换至视觉模型: {self.model_info['model']}"
+                            )
                         else:
-                            logger.info("触发视觉任务，但未配置 vision_model 字段，退回普通模型")
-                            self.model_info = model_selector.get_moe_current_model(difficulty)
+                            logger.info(
+                                "触发视觉任务，但未配置 vision_model 字段，退回普通模型"
+                            )
+                            self.model_info = model_selector.get_moe_current_model(
+                                difficulty
+                            )
                     else:
-                        self.model_info = model_selector.get_moe_current_model(difficulty)
-        
+                        self.model_info = model_selector.get_moe_current_model(
+                            difficulty
+                        )
+
         if not hasattr(self, "model_info") or not self.model_info:
             self.model_info = model_selector.get_model("selected_model")
         logger.info(f"模型选择为：{self.model_info['model']}")
@@ -334,12 +351,19 @@ class MoeLlm:
     def _build_payload(self, send_message_list: list) -> tuple[dict, bool]:
         """构建发给大模型的 payload 与工具 schema"""
         if self.model_info.get("is_vision") and self.messages_handler.current_images:
-            logger.info(f"检测到多模态模型 {self.model_info['model']} 且存在图片，正在构建多模态请求...")
+            logger.info(
+                f"检测到多模态模型 {self.model_info['model']} 且存在图片，正在构建多模态请求..."
+            )
             current_msg = send_message_list[-1]
             vision_content = [{"type": "text", "text": current_msg["content"]}]
             for img_url in self.messages_handler.current_images:
-                vision_content.append({"type": "image_url", "image_url": {"url": img_url}})
-            send_message_list[-1] = {"role": current_msg["role"], "content": vision_content}
+                vision_content.append(
+                    {"type": "image_url", "image_url": {"url": img_url}}
+                )
+            send_message_list[-1] = {
+                "role": current_msg["role"],
+                "content": vision_content,
+            }
 
         current_stream_flag = self.model_info.get("stream", False)
         data = {
@@ -353,7 +377,10 @@ class MoeLlm:
             data["top_k"] = self.model_info.get("top_k")
 
         tools_schema = []
-        all_plugins_set = set(getattr(self, "required_plugins", [])) | self.messages_handler.get_all_used_plugins()
+        all_plugins_set = (
+            set(getattr(self, "required_plugins", []))
+            | self.messages_handler.get_all_used_plugins()
+        )
         all_plugins_set = tool_manager.expand_dependencies(all_plugins_set)
         logger.debug(f"LLM 最终将要注入的插件集合: {all_plugins_set}")
         all_plugins = list(all_plugins_set)
@@ -361,28 +388,41 @@ class MoeLlm:
         if all_plugins:
             normal_plugins = [p for p in all_plugins if p != "web_search"]
             if model_selector.get_use_tools() and normal_plugins:
-                tools_schema.extend(tool_manager.get_tool_schema(normal_plugins, include_search=False))
+                tools_schema.extend(
+                    tool_manager.get_tool_schema(normal_plugins, include_search=False)
+                )
             if model_selector.get_web_search() and "web_search" in all_plugins:
-                tools_schema.extend(tool_manager.get_tool_schema([], include_search=True))
+                tools_schema.extend(
+                    tool_manager.get_tool_schema([], include_search=True)
+                )
 
         if tools_schema:
             data["tools"] = tools_schema
-            send_message_list[0]["content"] += "。特别注意：1. 同步执行：如果你需要调用工具，必须在本次回复的文本(content)中用简短的一句话说明你要做什么，并**在同一次回复中立刻发起工具调用(tool_calls)**！2. 如果用户的请求包含多个步骤逻辑，你必须在获取到前置工具的结果后，**自动且连续地调用下一个工具**，直至彻底完成要求。"
+            send_message_list[0]["content"] += (
+                "。特别注意：1. 同步执行：如果你需要调用工具，必须在本次回复的文本(content)中用简短的一句话说明你要做什么，并**在同一次回复中立刻发起工具调用(tool_calls)**！2. 如果用户的请求包含多个步骤逻辑，你必须在获取到前置工具的结果后，**自动且连续地调用下一个工具**，直至彻底完成要求。"
+            )
             current_stream_flag = False
             logger.debug("检测到需要调用工具，已自动将本次请求切换为非流式")
-            logger.debug(f"实际发送给大模型的 tools_schema: {tools_schema}")   
+            logger.debug(f"实际发送给大模型的 tools_schema: {tools_schema}")
         data["stream"] = current_stream_flag
         return data, current_stream_flag
 
-    async def _execute_tools(self, tool_calls: list, result_text: str, send_message_list: list) -> list:
+    async def _execute_tools(
+        self, tool_calls: list, result_text: str, send_message_list: list
+    ) -> list:
         """执行工具调用，并更新消息列表和本地隐藏记忆"""
         for call in tool_calls:
-            if not call.get("function", {}).get("arguments") or not str(call["function"]["arguments"]).strip():
+            if (
+                not call.get("function", {}).get("arguments")
+                or not str(call["function"]["arguments"]).strip()
+            ):
                 call["function"]["arguments"] = "{}"
 
         assistant_msg = {
             "role": "assistant",
-            "content": str(result_text) if result_text and str(result_text).strip() else "（正在调用工具）",
+            "content": str(result_text)
+            if result_text and str(result_text).strip()
+            else "（正在调用工具）",
             "tool_calls": tool_calls,
         }
         send_message_list.append(assistant_msg)
@@ -396,7 +436,7 @@ class MoeLlm:
             except Exception:
                 args = {}
             logger.info(f"准备执行函数: {func_name}，传入参数: {args}")
-            
+
             tool_result = "执行成功"
             if func_name == "web_search":
                 query = args.get("query", "")
@@ -407,7 +447,7 @@ class MoeLlm:
                     await self.bot.send(self.event, f"正在搜索: {query}...")
                 search_res = await Search(query).get_search()
                 tool_result = search_res if search_res else "未找到相关结果"
-                
+
             elif func_name in tool_manager.custom_tools:
                 if text_to_send:
                     await self.send_emotion_message(text_to_send)
@@ -416,7 +456,11 @@ class MoeLlm:
                     await self.bot.send(self.event, f"正在调用函数: {func_name}...")
                 try:
                     func = tool_manager.custom_tools[func_name]["func"]
-                    res = await func(**args) if inspect.iscoroutinefunction(func) else func(**args)
+                    res = (
+                        await func(**args)
+                        if inspect.iscoroutinefunction(func)
+                        else func(**args)
+                    )
                     tool_result = str(res)
                 except Exception as e:
                     logger.error(traceback.format_exc())
@@ -428,14 +472,20 @@ class MoeLlm:
                 else:
                     await self.bot.send(self.event, f"正在执行指令: {func_name}...")
                 command = args.get("command", "")
-                tool_result = await event_simulator.dispatch_event(self.bot, self.event, command)
+                tool_result = await event_simulator.dispatch_event(
+                    self.bot, self.event, command
+                )
 
-            send_message_list.append({
-                "role": "tool",
-                "tool_call_id": call["id"],
-                "content": tool_result,
-            })
-            tool_memory_list.append(f"[系统隐藏记录：你刚才调用了工具 {func_name}，参数是 {args}，结果是：{tool_result[:200]}]")
+            send_message_list.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": tool_result,
+                }
+            )
+            tool_memory_list.append(
+                f"【系统环境背景：工具 {func_name} 已执行，参数 {args}，结果：{tool_result[:200]}】"
+            )
 
         if getattr(self, "current_tool_memory", ""):
             self.current_tool_memory += "\n"
@@ -468,38 +518,59 @@ class MoeLlm:
         max_tool_rounds = config_parser.get_config("max_tool_rounds") or 3
         max_retry_times = config_parser.get_config("max_retry_times") or 3
 
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300)) as session:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=300)
+        ) as session:
             # 修改：增加上限至 max_tool_rounds + 1，以容纳最后一次强制总结
             for tool_round in range(max_tool_rounds + 1):
                 result_text = ""
                 success = False
                 tool_calls = None
-                
-                # 修改：达到最大轮次时，移除工具强制总结
+
+                # 达到最大轮次时，移除工具强制总结
                 if tool_round == max_tool_rounds:
                     data.pop("tools", None)
-                    data["stream"] = self.model_info.get("stream", False)
                     current_stream_flag = data["stream"]
-                    send_message_list.append({
-                        "role": "user",
-                        "content": "系统提示：工具自动调用次数已达当前轮次上限。请根据前序步骤收集到的隐藏记录信息，得出初步结论或阶段性总结。如果任务未彻底完成，请直接在回复末尾主动询问用户是否需要继续执行。"
-                    })
+                    send_message_list.append(
+                        {
+                            "role": "user",
+                            "content": "系统提示：工具自动调用次数已达当前轮次上限。请根据前序步骤收集到的隐藏记录信息，得出初步结论或阶段性总结。如果任务未彻底完成，请直接在回复末尾主动询问用户是否需要继续执行。",
+                        }
+                    )
 
                 # 网络请求重试逻辑
                 for retry_times in range(max_retry_times):
                     if retry_times > 0:
-                        await self.bot.send(self.event, f"api又卡了呐！第 {retry_times+1} 次尝试，请勿多次发送~")
+                        await self.bot.send(
+                            self.event,
+                            f"api又卡了呐！第 {retry_times+1} 次尝试，请勿多次发送~",
+                        )
                         await asyncio.sleep(2 ** (retry_times + 1))
                     try:
                         if current_stream_flag:
-                            success, result_text, tool_calls = await self.stream_llm_chat(
-                                session, self.model_info["url"], headers, data,
-                                self.model_info.get("proxy"), self.model_info.get("is_segment")
+                            (
+                                success,
+                                result_text,
+                                tool_calls,
+                            ) = await self.stream_llm_chat(
+                                session,
+                                self.model_info["url"],
+                                headers,
+                                data,
+                                self.model_info.get("proxy"),
+                                self.model_info.get("is_segment"),
                             )
                         else:
-                            success, result_text, tool_calls = await self.none_stream_llm_chat(
-                                session, self.model_info["url"], headers, json.dumps(data),
-                                self.model_info.get("proxy")
+                            (
+                                success,
+                                result_text,
+                                tool_calls,
+                            ) = await self.none_stream_llm_chat(
+                                session,
+                                self.model_info["url"],
+                                headers,
+                                json.dumps(data),
+                                self.model_info.get("proxy"),
                             )
                         if success:
                             break
@@ -515,9 +586,11 @@ class MoeLlm:
 
                 # 3. 执行工具调用（非总结轮次才执行）
                 if tool_calls and tool_round < max_tool_rounds:
-                    send_message_list = await self._execute_tools(tool_calls, result_text, send_message_list)
+                    send_message_list = await self._execute_tools(
+                        tool_calls, result_text, send_message_list
+                    )
                     data["messages"] = send_message_list
-                    continue  
+                    continue
 
                 # ===== 循环结束分支（无工具调用或已达到总结轮次） =====
                 if not current_stream_flag and result_text:
@@ -525,11 +598,11 @@ class MoeLlm:
 
                 # 修改：统一并完整保存上下文，用户说“继续”时大模型能够回想起 current_tool_memory 里的内容
                 if not self.is_objective:
-                    final_memory = result_text
-                    if getattr(self, "current_tool_memory", ""):
-                        final_memory = f"{self.current_tool_memory}\n{result_text}"
-                    self.messages_handler.post_process(final_memory)
+                    self.messages_handler.post_process(
+                        assistant_msg=result_text,
+                        tool_memory=getattr(self, "current_tool_memory", ""),
+                    )
 
                 return True
-        
+
         return "请求处理异常结束"

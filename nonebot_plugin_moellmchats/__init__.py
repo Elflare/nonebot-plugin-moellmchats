@@ -10,6 +10,7 @@ from nonebot.adapters.onebot.v11 import (
     MessageEvent,
     GroupMessageEvent,
     PokeNotifyEvent,
+    PrivateMessageEvent,
     Bot,
 )
 import random
@@ -39,6 +40,7 @@ __plugin_meta__ = PluginMetadata(
 5.超级管理员限定：用"添加/移除插件黑名单"来禁用bot的特定工具调用
 6.超级管理员限定：用"刷新工具/重载工具"来热重载新增的函数
 7.超级管理员限定：用"查看插件黑名单/插件黑名单"来查看插件的黑名单列表
+8.超级管理员限定：用"设置私聊 开/关"来开启/关闭超级管理员私聊对话模式
 """,
     type="application",
     homepage="https://github.com/Elflare/nonebot-plugin-moellmchats",
@@ -64,6 +66,18 @@ async def context_dict_func(bot: Bot, event: MessageEvent):
         #     llm = llm.MoeLlm(
         # bot, event, message_dict,is_objective=True, temperament='默认')
         #     reply = await llm.handle_llm()
+
+
+async def chat_rule(bot: Bot, event: MessageEvent) -> bool:
+    if isinstance(event, GroupMessageEvent):
+        return True
+    if isinstance(event, PrivateMessageEvent):
+        # 严格判断：开关打开 且 为超级管理员
+        return bool(
+            config_parser.get_config("private_chat_enabled")
+            and str(event.user_id) in bot.config.superusers
+        )
+    return False
 
 
 # 性格切换
@@ -213,12 +227,12 @@ async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
 
 
 async def handle_llm(
-    bot: Bot, event: GroupMessageEvent, matcher, format_message_dict: dict, is_ai=False
+    bot: Bot, event: MessageEvent, matcher, format_message_dict: dict, is_ai=False
 ):
     # 获取消息文本
     user_id = event.sender.user_id
     if event.time - cd[user_id] < config_parser.get_config("cd_seconds"):
-        sender_name = event.sender.card or event.sender.nickname
+        sender_name = getattr(event.sender, "card", None) or event.sender.nickname
         if is_repeat_ask_dict[user_id]:
             await matcher.finish(
                 f"{sender_name}的llm对话cd中, 将会在{config_parser.get_config('cd_seconds') - (event.time-cd[user_id])}秒后自动回答，请不要重复提问~"
@@ -248,8 +262,7 @@ async def handle_llm(
 
 
 llm_matcher = on_message(
-    rule=to_me(),
-    permission=GROUP,
+    rule=to_me() & chat_rule,
     priority=99,
     block=True,
 )
@@ -269,7 +282,7 @@ async def _(bot: Bot, event: MessageEvent):
 if config_parser.get_config("fastai_enabled"):
     ai_matcher = on_command(
         "ai",
-        permission=GROUP,
+        rule=chat_rule,
         priority=17,
         block=True,
     )
@@ -406,6 +419,41 @@ async def _():
     await refresh_models_matcher.finish(
         f"更新完毕！当前系统共加载了 {len(model_selector.models)} 个模型。"
     )
+
+
+# 供其他插件总结用
+summary_model_matcher = on_command(
+    "切换总结模型",
+    aliases={"设置总结模型"},
+    permission=SUPERUSER,
+    priority=10,
+    block=True,
+)
+
+
+@summary_model_matcher.handle()
+async def _(event: MessageEvent, args: Message = CommandArg()):
+    model_query = args.extract_plain_text().strip()
+    result = model_selector.set_summary_model(model_query)
+    await summary_model_matcher.finish(result)
+
+
+set_private_chat_matcher = on_command(
+    "设置私聊", permission=SUPERUSER, priority=10, block=True
+)
+
+
+@set_private_chat_matcher.handle()
+async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
+    arg = args.extract_plain_text().strip()
+    if arg in ["开", "1"]:
+        config_parser.set_config("private_chat_enabled", True)
+        await set_private_chat_matcher.finish("已开启超级管理员私聊对话模式")
+    elif arg in ["关", "0"]:
+        config_parser.set_config("private_chat_enabled", False)
+        await set_private_chat_matcher.finish("已关闭超级管理员私聊对话模式")
+    else:
+        await set_private_chat_matcher.finish("参数错误，格式为：设置私聊 开、关、1、0")
 
 
 # 优先级10，不会向下阻断，条件：戳一戳bot触发

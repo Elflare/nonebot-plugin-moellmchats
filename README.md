@@ -6,26 +6,26 @@
 
 <a href="./LICENSE"> <img src="https://img.shields.io/github/license/Elflare/nonebot-plugin-moellmchats.svg" alt="license"> </a> <a href="https://pypi.python.org/pypi/nonebot-plugin-moellmchats"> <img src="https://img.shields.io/pypi/v/nonebot-plugin-moellmchats.svg" alt="pypi"> </a> <img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="python"></div>
 
-  - [🚀 核心特性](#-核心特性)
-  - [📦 安装](#-安装)
-  - [⚙️ 配置](#️-配置)
-    - [`.env` 配置](#env-配置)
-    - [本插件主要配置](#本插件主要配置)
-      - [基础配置 `config.json`(手动维护)](#基础配置-configjson手动维护)
-      - [服务商配置 `providers.toml`(推荐/自动生成)](#服务商配置-providerstoml推荐自动生成)
-      - [系统动态缓存 model_cache.json(系统维护)](#系统动态缓存-model_cachejson系统维护)
-      - [模型管理 models.json(向下兼容/遗留)](#模型管理-modelsjson向下兼容遗留)
-      - [智能调度配置 `model_config.json`(指令维护)](#智能调度配置-model_configjson指令维护)
-      - [插件自定义描述 `custom_plugin_info.json`(手动维护)](#插件自定义描述-custom_plugin_infojson手动维护)
-      - [原生自定义函数目录 custom_tools/(手动维护)](#原生自定义函数目录-custom_tools手动维护)
-      - [性格设定 `temperaments.json` (手动维护)](#性格设定-temperamentsjson-手动维护)
-      - [用户性格设定 `temperament_config.json` (指令维护)](#用户性格设定-temperament_configjson-指令维护)
-  - [🎮 使用](#-使用)
-    - [指令表](#指令表)
-    - [效果图](#效果图)
-  - [🔄 处理流程](#-处理流程)
-  - [更新日志](#更新日志)
-  - [鸣谢](#鸣谢)
+- [🚀 核心特性](#-核心特性)
+- [📦 安装](#-安装)
+- [⚙️ 配置](#️-配置)
+  - [`.env` 配置](#env-配置)
+  - [本插件主要配置](#本插件主要配置)
+    - [基础配置 `config.json`(手动维护)](#基础配置-configjson手动维护)
+    - [服务商配置 `providers.toml`(推荐/自动生成)](#服务商配置-providerstoml推荐自动生成)
+    - [系统动态缓存 model_cache.json(系统维护)](#系统动态缓存-model_cachejson系统维护)
+    - [模型管理 models.json(向下兼容/遗留)](#模型管理-modelsjson向下兼容遗留)
+    - [智能调度配置 `model_config.json`(指令维护)](#智能调度配置-model_configjson指令维护)
+    - [插件自定义描述 `custom_plugin_info.json`(手动维护)](#插件自定义描述-custom_plugin_infojson手动维护)
+    - [原生自定义函数目录 custom_tools/(手动维护)](#原生自定义函数目录-custom_tools手动维护)
+    - [性格设定 `temperaments.json` (手动维护)](#性格设定-temperamentsjson-手动维护)
+    - [用户性格设定 `temperament_config.json` (指令维护)](#用户性格设定-temperament_configjson-指令维护)
+- [🎮 使用](#-使用)
+  - [指令表](#指令表)
+  - [效果图](#效果图)
+- [🔄 处理流程](#-处理流程)
+- [更新日志](#更新日志)
+- [鸣谢](#鸣谢)
 
 ## 🚀 核心特性
 
@@ -214,6 +214,7 @@ temperature = 1.2
 stream = true
 is_segment = true
 max_segments = 5
+json_mode = true  # <-- 可在此自定义json结构化输出配置，以方便分类模型使用。聊天模型不影响
 
 [providers.openai.model_configs.o1-preview]
 stream = false  # 不支持流式的模型可单独关闭
@@ -370,6 +371,7 @@ async def get_weather(
 |      插件黑名单      | 超级管理员 | 私聊 / 群聊 |        无         |  查看当前禁止大模型调用的插件列表，`查看插件黑名单` 均可  |
 |      添加黑名单      | 超级管理员 | 私聊 / 群聊 |     插件标识      |           将插件加入黑名单，禁止大模型代为调用            |
 |      移除黑名单      | 超级管理员 | 私聊 / 群聊 |     插件标识      |             从大模型调用黑名单中释放特定插件              |
+|       设置私聊       | 超级管理员 | 私聊 / 群聊 |   0、1、开、关    |                 是否开启超级管理员私聊bot                 |
 
 ### 效果图
 
@@ -442,10 +444,21 @@ flowchart TD
    - 分级路由：简单问题直连轻量模型（响应速度提升40%），复杂问题调用专家模型（准确度提升60%）
 
 4. Token消耗降低
-   - 大致可降低API调用失败率78%，Token浪费减少63%，同时保障高并发场景下的系统稳定性。
+
    - 动态 Schema 注入：摒弃了传统的“全量工具挂载”方案。主模型日常聊天时绝不携带冗长的工具说明，仅在触发特定任务时按需加载对应插件的 Schema，实现 Token 的极致利用。
 
+   - 大幅降低API调用失败率，Token浪费显著减少，同时保障高并发场景下的系统稳定性。
+
 ## 更新日志
+
+### 2026-04-08 v0.19.1
+
+- 同一个供应商可以填多个key，随机选择
+- 优化工具调用逻辑
+- 现在可以设置允许超级管理员私聊bot（方便调用如执行shell命令之类的工具）
+- 现在可以在模型设置中开启结构化输出，方便分类模型使用
+- 现在第一次安装后，不再生成旧版`models.json`文件。
+
 
 ### 2026-04-07 v0.19.0
 

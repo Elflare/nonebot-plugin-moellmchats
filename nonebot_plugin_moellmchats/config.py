@@ -31,6 +31,7 @@ class ConfigParser:
                 "emotions_enabled": False,
                 "emotion_rate": 0.1,
                 "emotions_dir": "absolute path",
+                "private_chat_enabled": False,
             }
             with open(self.filepath, "w", encoding="utf-8") as file:
                 json.dump(config, file, indent=4, ensure_ascii=False)
@@ -39,6 +40,11 @@ class ConfigParser:
     def get_config(self, key):
         """Get the value of a configuration item by key."""
         return self.config.get(key)
+
+    def set_config(self, key, value):
+        self.config[key] = value
+        with open(self.filepath, "w", encoding="utf-8") as file:
+            json.dump(self.config, file, indent=4, ensure_ascii=False)
 
 
 config_parser = ConfigParser()
