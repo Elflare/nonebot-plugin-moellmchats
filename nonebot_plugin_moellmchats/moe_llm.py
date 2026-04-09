@@ -382,9 +382,13 @@ class MoeLlm:
             data["top_k"] = self.model_info.get("top_k")
 
         tools_schema = []
+        # 获取常驻插件并转为集合
+        resident_plugins = set(model_selector.get_resident_plugins())
+        # 通过并集操作 (|) 自动合并并去重：分类模型返回的 + 历史使用的 + 常驻的
         all_plugins_set = (
             set(getattr(self, "required_plugins", []))
             | self.messages_handler.get_all_used_plugins()
+            | resident_plugins
         )
         all_plugins_set = tool_manager.expand_dependencies(all_plugins_set)
         logger.debug(f"LLM 最终将要注入的插件集合: {all_plugins_set}")

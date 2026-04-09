@@ -29,6 +29,7 @@ from .model_selector import model_selector
 from .temperament_manager import temperament_manager
 from .config import config_parser
 from .tool_manager import tool_manager
+from .messages_handler import messages_dict
 
 __plugin_meta__ = PluginMetadata(
     name="MoEllm聊天",
@@ -41,6 +42,9 @@ __plugin_meta__ = PluginMetadata(
 6.超级管理员限定：用"刷新工具/重载工具"来热重载新增的函数
 7.超级管理员限定：用"查看插件黑名单/插件黑名单"来查看插件的黑名单列表
 8.超级管理员限定：用"设置私聊 开/关"来开启/关闭超级管理员私聊对话模式
+9.对bot发送"重置我的/重置对话/清空上下文"来清空自己的上下文对话记忆
+10.超级管理员限定：对bot发送"重置全部对话"来清空所有用户的上下文及群组环境记忆
+11.超级管理员限定：用"添加常驻插件/移除常驻插件"、"查看常驻插件"来管理无视分类模型强制注入的工具
 """,
     type="application",
     homepage="https://github.com/Elflare/nonebot-plugin-moellmchats",
@@ -125,6 +129,7 @@ async def _(event: MessageEvent, args: Message = CommandArg()):
     query = args.extract_plain_text().strip()
     result = model_selector.get_formatted_model_list(query if query else None)
     await check_model_matcher.finish(result)
+
 
 # 2. 查看当前机器人身上挂着哪些配置
 check_config_matcher = on_fullmatch(
@@ -453,6 +458,96 @@ async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
         await set_private_chat_matcher.finish("已关闭超级管理员私聊对话模式")
     else:
         await set_private_chat_matcher.finish("参数错误，格式为：设置私聊 开、关、1、0")
+
+
+# 重置个人对话（需要 @ 机器人触发）
+reset_mine_matcher = on_command(
+    "重置我的",
+    aliases={"重置对话", "清空上下文"},
+    rule=to_me(),
+    priority=10,
+    block=True,
+)
+
+
+@reset_mine_matcher.handle()
+async def _(event: MessageEvent):
+    user_id = event.user_id
+    if user_id in messages_dict:
+        messages_dict[user_id].clear()  # 清空个人记忆
+
+    # 清理该用户的调用CD和状态
+    cd[user_id] = 0
+    is_repeat_ask_dict[user_id] = False
+
+    await reset_mine_matcher.finish("已清空你的专属上下文对话记忆~")
+
+
+# 重置全部对话（需要超级管理员 + @ 机器人触发）
+reset_all_matcher = on_fullmatch(
+    {"重置全部对话", "重置所有对话", "清空所有上下文", "清空全部上下文"},
+    rule=to_me(),
+    permission=SUPERUSER,
+    priority=10,
+    block=True,
+)
+
+
+@reset_all_matcher.handle()
+async def _():
+    messages_dict.clear()  # 清空所有人的个人记忆
+    llm.context_dict.clear()  # 清空所有群聊的群聊环境记忆
+    cd.clear()
+    is_repeat_ask_dict.clear()
+
+    await reset_all_matcher.finish("已清空所有用户的上下文及群聊环境记忆！")
+
+
+manage_resident_matcher = on_command(
+    "添加常驻插件",
+    aliases={"移除常驻插件", "添加常驻函数", "移除常驻函数"},
+    permission=SUPERUSER,
+    priority=10,
+    block=True,
+)
+
+
+@manage_resident_matcher.handle()
+async def _(event: MessageEvent, args: Message = CommandArg()):
+    plugin_name = args.extract_plain_text().strip()
+    if not plugin_name:
+        await manage_resident_matcher.finish(
+            "请提供插件/函数名，如：添加常驻插件 web_search"
+        )
+
+    command_name = event.message.extract_plain_text().split()[0].strip()
+    action = "add" if "添加" in command_name else "remove"
+    result = model_selector.manage_resident_plugins(action, plugin_name)
+    await manage_resident_matcher.finish(result)
+
+
+check_resident_matcher = on_command(
+    "常驻插件",
+    aliases={"查看常驻插件", "查看常驻函数"},
+    permission=SUPERUSER,
+    priority=10,
+    block=True,
+)
+
+
+@check_resident_matcher.handle()
+async def _(event: MessageEvent):
+    resident = model_selector.get_resident_plugins()
+    if not resident:
+        await check_resident_matcher.finish(
+            "当前常驻插件列表为空。大模型将完全依赖分类模型进行插件调度。"
+        )
+
+    lines = ["📌 当前常驻插件/函数列表 (无视分类强制注入)："]
+    for plugin in resident:
+        lines.append(f"  - {plugin}")
+
+    await check_resident_matcher.finish("\n".join(lines))
 
 
 # 优先级10，不会向下阻断，条件：戳一戳bot触发
