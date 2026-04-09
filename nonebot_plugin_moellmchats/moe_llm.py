@@ -17,6 +17,7 @@ import random
 from .tool_manager import tool_manager
 from .event_simulator import event_simulator
 import inspect
+import datetime
 
 context_dict = defaultdict(
     lambda: deque(maxlen=config_parser.get_config("max_group_history"))
@@ -274,26 +275,29 @@ class MoeLlm:
 
     def prompt_handler(self):
         """处理system prompt，表情包和上下文相关"""
-        emotion_prompt = ""
-        if self.temperament != "ai助手":  # 不为ai助手才加上下文
-            # 表情包
+        # 注入时间
+        if config_parser.get_config("show_datetime"):
+            now = datetime.datetime.now()
+            time_str = now.strftime('%Y年%m月%d日 %H:%M:%S')
+            self.prompt = f"当前系统时间: {time_str}。" + self.prompt
+        # 仅当不是“ai助手”时，才注入性格设定、表情包和群聊/私聊环境上下文
+        if self.temperament != "ai助手":
+            emotion_prompt = ""
+            # 表情包逻辑
             if (
                 config_parser.get_config("emotions_enabled")
-                and self.model_info.get("is_segment")
-                and self.model_info.get("stream")
                 and random.random() < config_parser.get_config("emotion_rate")
             ):
                 self.emotion_flag = True
                 emotion_prompt = f"。回复时根据回答内容，发送表情包，每次回复最多发一个表情包，格式为中括号+表情包名字，如：[表情包名字]。可选表情有{get_emotions_names()}"
-        # 判断是否为群聊
-        if hasattr(self.event, "group_id"):
-            self.prompt += f"。现在你在一个qq群中,你只需回复我{emotion_prompt}。群里近期聊天内容，冒号前面是id，后面是内容：\n"
-            context_dict_ = list(context_dict[self.event.group_id])[:-1]
-            self.prompt += "\n".join(context_dict_)
-        else:
-            self.prompt += (
-                f"。现在我们处于一对一私聊环境,你只需回复我{emotion_prompt}。"
-            )
+
+            # 环境与上下文逻辑
+            if hasattr(self.event, "group_id"):
+                self.prompt += f"。现在你在一个qq群中,你只需回复我{emotion_prompt}。群里近期聊天内容，冒号前面是id，后面是内容：\n"
+                context_dict_ = list(context_dict[self.event.group_id])[:-1]
+                self.prompt += "\n".join(context_dict_)
+            else:
+                self.prompt += emotion_prompt
         tool_memory_context = []
         for entity in self.messages_handler.messages_entity_list:
             if entity.tool_memory:

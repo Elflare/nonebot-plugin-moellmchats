@@ -32,6 +32,7 @@ class ConfigParser:
                 "emotion_rate": 0.1,
                 "emotions_dir": "absolute path",
                 "private_chat_enabled": False,
+                "show_datetime": False,  # 是否在System Prompt中注入当前时间
             }
             with open(self.filepath, "w", encoding="utf-8") as file:
                 json.dump(config, file, indent=4, ensure_ascii=False)
