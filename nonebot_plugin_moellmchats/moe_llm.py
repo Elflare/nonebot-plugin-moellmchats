@@ -22,6 +22,8 @@ import datetime
 context_dict = defaultdict(
     lambda: deque(maxlen=config_parser.get_config("max_group_history"))
 )
+# token消耗记录
+token_usage_history = deque(maxlen=50)
 
 
 class MoeLlm:
@@ -41,7 +43,52 @@ class MoeLlm:
         self.temperament = temperament
         self.model_info = {}
         self.emotion_flag = False  # 判断本次对话是否发送表情包
-        self.prompt = f"{temperament_manager.get_temperament_prompt(temperament)}。我的id是{ event.sender.card or event.sender.nickname}"
+        self.prompt = temperament_manager.get_temperament_prompt(temperament)
+        self.dynamic_context = ""
+
+    def prompt_handler(self):
+        """处理动态上下文（时间、状态、群聊记录、工具记忆）"""
+        dynamic_context_parts = []
+        # 注入时间和用户ID
+        if config_parser.get_config("show_datetime"):
+            now = datetime.datetime.now()
+            time_str = now.strftime("%Y年%m月%d日 %H:%M:%S")
+            dynamic_context_parts.append(f"当前系统时间: {time_str}。")
+        dynamic_context_parts.append(
+            f"当前用户的id是{self.event.sender.card or self.event.sender.nickname}。"
+        )
+        # 仅当不是“ai助手”时，才注入性格设定、表情包和群聊/私聊环境上下文
+        if self.temperament != "ai助手":
+            emotion_prompt = ""
+            if config_parser.get_config(
+                "emotions_enabled"
+            ) and random.random() < config_parser.get_config("emotion_rate"):
+                self.emotion_flag = True
+                emotion_prompt = f"。回复时根据回答内容，发送表情包，每次回复最多发一个表情包，格式为中括号+表情包名字，如：[表情包名字]。可选表情有{get_emotions_names()}"
+
+            if hasattr(self.event, "group_id"):
+                dynamic_context_parts.append(
+                    f"现在你在一个qq群中,你只需回复用户。{emotion_prompt}。"
+                )
+                dynamic_context_parts.append(
+                    "群里近期聊天内容，冒号前面是id，后面是内容："
+                )
+                context_dict_ = list(context_dict[self.event.group_id])[:-1]
+                dynamic_context_parts.append("\n".join(context_dict_))
+            else:
+                dynamic_context_parts.append(emotion_prompt)
+        # 处理工具记忆
+        tool_memory_context = []
+        for entity in self.messages_handler.messages_entity_list:
+            if entity.tool_memory:
+                tool_memory_context.append(entity.tool_memory)
+
+        if tool_memory_context:
+            dynamic_context_parts.append(
+                "\n【系统提示：历史工具执行记录】\n" + "\n".join(tool_memory_context)
+            )
+
+        self.dynamic_context = "\n".join(dynamic_context_parts)
 
     async def send_emotion_message(self, content: str) -> str:
         """处理和发送表情包
@@ -64,7 +111,23 @@ class MoeLlm:
         if response.status == 400:
             error_content = await response.text()
             logger.warning(f"API请求400错误: {error_content}")
-
+            # 1. 尝试解析 API 返回的具体报错信息
+            detail_msg = ""
+            try:
+                # 大多数模型厂商返回的错误都是 JSON 格式
+                error_json = json.loads(error_content)
+                if isinstance(error_json, dict):
+                    # 兼容 OpenAI / DeepSeek 格式: {"error": {"message": "..."}}
+                    if "error" in error_json and isinstance(error_json["error"], dict):
+                        detail_msg = error_json["error"].get("message", "")
+                    # 兼容其他格式: {"message": "..."} 或 {"msg": "..."}
+                    else:
+                        detail_msg = error_json.get("message", "") or error_json.get(
+                            "msg", ""
+                        )
+            except Exception:
+                pass  # 如果解析失败（比如返回了HTML页面），则保持原样不提取
+            # 2. 敏感词拦截逻辑保持不变
             sensitive_keywords = [
                 "DataInspectionFailed",  # 阿里
                 "content_filter",  # OpenAI/Azure
@@ -74,10 +137,9 @@ class MoeLlm:
                 "audit",
                 "prohibited",
             ]
-
             if any(k.lower() in error_content.lower() for k in sensitive_keywords):
                 return "图片或内容可能包含敏感信息"
-            # 打印发往大模型的完整 JSON Payload
+            # 3. 打印完整 Payload 逻辑保持不变
             if request_data is not None:
                 if isinstance(request_data, str):
                     try:
@@ -90,7 +152,19 @@ class MoeLlm:
             else:
                 logger.warning(f"看看之前的对话记录：{self.format_message_dict}")
 
-            return "API请求被拒绝 (400)，请检查后台日志。"
+            # 4. 组装更详细的聊天回复文本
+            error_reply = "API请求被拒绝 (400)"
+            if detail_msg:
+                # 截取前150个字符，防止大段长英文代码刷屏，影响群聊体验
+                truncated_msg = (
+                    detail_msg[:150] + "..." if len(detail_msg) > 150 else detail_msg
+                )
+                error_reply += f"\n原因：{truncated_msg}"
+            else:
+                error_reply += "，请检查后台日志。"
+
+            return error_reply
+
         return None
 
     async def stream_llm_chat(
@@ -131,6 +205,29 @@ class MoeLlm:
                         continue
 
                     json_data = json.loads(decoded)
+                    if usage := json_data.get("usage"):
+                        # 根据最新文档，直接提取标准字段
+                        prompt_tokens = usage.get("prompt_tokens", 0)
+                        completion_tokens = usage.get("completion_tokens", 0)
+                        total_tokens = usage.get("total_tokens", 0)
+
+                        # 提取缓存命中 Token (兼容通义千问 Qwen 的 prompt_tokens_details 结构，以及 DeepSeek 的扁平结构)
+                        cache_hit = usage.get("prompt_tokens_details", {}).get(
+                            "cached_tokens", 0
+                        ) or usage.get("prompt_cache_hit_tokens", 0)
+
+                        token_usage_history.appendleft(
+                            {
+                                "time": datetime.datetime.now().strftime(
+                                    "%m-%d %H:%M:%S"
+                                ),
+                                "model": self.model_info["model"],
+                                "prompt": prompt_tokens,
+                                "cache": cache_hit,
+                                "completion": completion_tokens,
+                                "total": total_tokens,
+                            }
+                        )
                     content = ""
                     # 以此尝试获取完整消息或流式增量
                     choices = json_data.get("choices", [{}])
@@ -255,6 +352,27 @@ class MoeLlm:
                 return False, "API返回异常", None
 
         if choices := response.get("choices"):
+            if usage := response.get("usage"):
+                # 根据最新文档，直接提取标准字段
+                prompt_tokens = usage.get("prompt_tokens", 0)
+                completion_tokens = usage.get("completion_tokens", 0)
+                total_tokens = usage.get("total_tokens", 0)
+
+                # 提取缓存命中 Token (兼容通义千问 Qwen 的 prompt_tokens_details 结构，以及 DeepSeek 的扁平结构)
+                cache_hit = usage.get("prompt_tokens_details", {}).get(
+                    "cached_tokens", 0
+                ) or usage.get("prompt_cache_hit_tokens", 0)
+
+                token_usage_history.appendleft(
+                    {
+                        "time": datetime.datetime.now().strftime("%m-%d %H:%M:%S"),
+                        "model": self.model_info["model"],
+                        "prompt": prompt_tokens,
+                        "cache": cache_hit,
+                        "completion": completion_tokens,
+                        "total": total_tokens,
+                    }
+                )
             message = choices[0]["message"]
             content = message.get("content", "")
             # 清理思考内容
@@ -272,42 +390,6 @@ class MoeLlm:
         else:
             logger.warning(response)
             return False, "API解析异常", None
-
-    def prompt_handler(self):
-        """处理system prompt，表情包和上下文相关"""
-        # 注入时间
-        if config_parser.get_config("show_datetime"):
-            now = datetime.datetime.now()
-            time_str = now.strftime('%Y年%m月%d日 %H:%M:%S')
-            self.prompt = f"当前系统时间: {time_str}。" + self.prompt
-        # 仅当不是“ai助手”时，才注入性格设定、表情包和群聊/私聊环境上下文
-        if self.temperament != "ai助手":
-            emotion_prompt = ""
-            # 表情包逻辑
-            if (
-                config_parser.get_config("emotions_enabled")
-                and random.random() < config_parser.get_config("emotion_rate")
-            ):
-                self.emotion_flag = True
-                emotion_prompt = f"。回复时根据回答内容，发送表情包，每次回复最多发一个表情包，格式为中括号+表情包名字，如：[表情包名字]。可选表情有{get_emotions_names()}"
-
-            # 环境与上下文逻辑
-            if hasattr(self.event, "group_id"):
-                self.prompt += f"。现在你在一个qq群中,你只需回复我{emotion_prompt}。群里近期聊天内容，冒号前面是id，后面是内容：\n"
-                context_dict_ = list(context_dict[self.event.group_id])[:-1]
-                self.prompt += "\n".join(context_dict_)
-            else:
-                self.prompt += emotion_prompt
-        tool_memory_context = []
-        for entity in self.messages_handler.messages_entity_list:
-            if entity.tool_memory:
-                tool_memory_context.append(entity.tool_memory)
-
-        # 将所有历史工具记录按照时间顺序拼接，作为系统提示注入
-        if tool_memory_context:
-            self.prompt += "\n\n【系统提示：历史工具执行记录】\n" + "\n".join(
-                tool_memory_context
-            )
 
     async def _prepare_model_info(self, plain: str):
         """预处理：获取模型信息、处理难度分类与视觉判断"""
@@ -408,12 +490,14 @@ class MoeLlm:
         if tools_schema:
             data["tools"] = tools_schema
             send_message_list[0]["content"] += (
-                "。特别注意：1. 同步执行：如果你需要调用工具，必须在本次回复的文本(content)中用简短的一句话说明你要做什么，并**在同一次回复中立刻发起工具调用(tool_calls)**！2. 如果用户的请求包含多个步骤逻辑，你必须在获取到前置工具的结果后，**自动且连续地调用下一个工具**，直至彻底完成要求。"
+                "。特别注意：1. 同步执行：如果你需要调用工具，必须在本次回复的文本(content)中用简短的一句话说明你要做什么，并**在同一次回复中立刻发起工具调用(tool_calls)**！2. 如果用户的请求包含多个步骤逻辑，你必须在获取到前置工具的结果后，**自动且连续地调用下一个工具**，直至彻底完成要求。3.工具执行结束后，原始数据将被清理。因此你最终呈现给用户的回复content中，**必须完整包含查询到的核心数据和关键结论**，这将作为你下一轮对话的记忆依据！"
             )
             current_stream_flag = False
             logger.debug("检测到需要调用工具，已自动将本次请求切换为非流式")
             logger.debug(f"实际发送给大模型的 tools_schema: {tools_schema}")
         data["stream"] = current_stream_flag
+        if current_stream_flag:
+            data["stream_options"] = {"include_usage": True}
         return data, current_stream_flag
 
     async def _execute_tools(
@@ -465,6 +549,15 @@ class MoeLlm:
                     await self.bot.send(self.event, f"正在调用函数: {func_name}...")
                 try:
                     func = tool_manager.custom_tools[func_name]["func"]
+                    # 依赖注入核心逻辑
+                    sig = inspect.signature(func)
+                    if "_tool_manager" in sig.parameters:
+                        args["_tool_manager"] = tool_manager
+                    # 注入 bot 和 event
+                    if "_bot" in sig.parameters:
+                        args["_bot"] = self.bot
+                    if "_event" in sig.parameters:
+                        args["_event"] = self.event
                     res = (
                         await func(**args)
                         if inspect.iscoroutinefunction(func)
@@ -493,7 +586,7 @@ class MoeLlm:
                 }
             )
             tool_memory_list.append(
-                f"【系统环境背景：工具 {func_name} 已执行，参数 {args}，结果：{tool_result[:200]}】"
+                f"【系统环境背景：工具 {func_name} 已执行，参数 {args}，结果：{tool_result[:2000]}】"
             )
 
         if getattr(self, "current_tool_memory", ""):
@@ -512,8 +605,20 @@ class MoeLlm:
 
         self.prompt_handler()
         send_message_list = self.messages_handler.get_send_message_list()
+        # 1. 将完全静态的 System Prompt 插入头部，确保命中前缀缓存
         send_message_list.insert(0, {"role": "system", "content": self.prompt})
+        # 2. 如果存在动态上下文，作为一条独立的 system 消息插入到最后一条 user 消息之前
+        if self.dynamic_context:
+            # 提取最后一条用户消息
+            last_user_msg = send_message_list.pop()
 
+            # 插入动态系统消息
+            send_message_list.append(
+                {"role": "system", "content": f"系统环境：\n{self.dynamic_context}"}
+            )
+
+            # 把用户消息放回最后
+            send_message_list.append(last_user_msg)
         # 2. 构建 Payload
         data, current_stream_flag = self._build_payload(send_message_list)
 

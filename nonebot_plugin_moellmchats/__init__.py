@@ -30,7 +30,7 @@ from .temperament_manager import temperament_manager
 from .config import config_parser
 from .tool_manager import tool_manager
 from .messages_handler import messages_dict
-
+from .moe_llm import token_usage_history
 __plugin_meta__ = PluginMetadata(
     name="MoEllm聊天",
     description="感谢llm，机器人变聪明了\n✨ 混合专家模型调度LLM插件 | 混合调度·联网搜索·上下文优化·个性定制·Token节约·更加拟人 ✨",
@@ -45,6 +45,7 @@ __plugin_meta__ = PluginMetadata(
 9.对bot发送"重置我的/重置对话/清空上下文"来清空自己的上下文对话记忆
 10.超级管理员限定：对bot发送"重置全部对话"来清空所有用户的上下文及群组环境记忆
 11.超级管理员限定：用"添加常驻插件/移除常驻插件"、"查看常驻插件"来管理无视分类模型强制注入的工具
+12.超级管理员限定：用"查看消耗 [数量或范围]"来查询API Token消耗记录（如：查看消耗 5、查看消耗 10-15、查看消耗 -50）
 """,
     type="application",
     homepage="https://github.com/Elflare/nonebot-plugin-moellmchats",
@@ -379,10 +380,15 @@ refresh_tools_matcher = on_command(
 @refresh_tools_matcher.handle()
 async def _():
     tool_manager.refresh_plugins()
-    tool_manager.load_custom_tools()
-    await refresh_tools_matcher.finish(
-        f"工具重载成功！当前已加载 {len(tool_manager.plugin_info)} 个原生插件与 {len(tool_manager.custom_tools)} 个自定义函数。"
-    )
+    error_count = tool_manager.load_custom_tools()  # 接收错误文件数
+    msg = "✨ 工具重载完成！\n"
+    msg += f"✅ 已加载 {len(tool_manager.plugin_info)} 个原生插件\n"
+    msg += f"✅ 已加载 {len(tool_manager.custom_tools)} 个自定义函数"
+
+    if error_count > 0:
+        msg += f"\n❌ 有 {error_count} 个自定义文件加载报错，详情请查看后台日志！"
+
+    await refresh_tools_matcher.finish(msg)
 
 
 category_model_matcher = on_command(
@@ -463,7 +469,7 @@ async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
 # 重置个人对话（需要 @ 机器人触发）
 reset_mine_matcher = on_command(
     "重置我的",
-    aliases={"重置对话", "清空上下文"},
+    aliases={"重置对话", "清空上下文", "清空对话"},
     rule=to_me(),
     priority=10,
     block=True,
@@ -549,6 +555,87 @@ async def _(event: MessageEvent):
 
     await check_resident_matcher.finish("\n".join(lines))
 
+
+# --- 查询 Token 消耗的指令 ---
+check_token_matcher = on_command(
+    "查看消耗",
+    aliases={"查询token", "token消耗"},
+    permission=SUPERUSER,
+    priority=10,
+    block=True,
+)
+
+
+@check_token_matcher.handle()
+async def _(event: MessageEvent, args: Message = CommandArg()):
+    arg = args.extract_plain_text().strip()
+    if not token_usage_history:
+        await check_token_matcher.finish("当前暂无 Token 消耗记录。")
+    history_list = list(token_usage_history)
+    total_records = len(history_list)
+    
+    # 默认查询参数
+    start_idx = 0
+    end_idx = min(5, total_records)
+    
+    if arg:
+        if arg.startswith('-') and arg[1:].isdigit():
+            # 逻辑 1：处理 "-N"（最远的 N 条记录）
+            n = int(arg[1:])
+            if n <= 0:
+                 await check_token_matcher.finish("范围错误，负数后面需要跟大于 0 的数字哦。")
+            n = min(n, total_records)
+            start_idx = total_records - n
+            end_idx = total_records
+            
+        elif '-' in arg:
+            # 逻辑 2：处理 "X-Y" 范围
+            parts = arg.split('-')
+            if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                x, y = int(parts[0]), int(parts[1])
+                if x > y or x <= 0:
+                    await check_token_matcher.finish("范围格式错误，请确保 X <= Y 且 X > 0，例如: 10-15")
+                start_idx = x - 1
+                end_idx = min(y, total_records)
+            else:
+                await check_token_matcher.finish("参数格式错误！支持的格式: 5、10-15、-10")
+                
+        elif arg.isdigit():
+            # 逻辑 3：处理 "N"（最近的 N 条记录）
+            n = int(arg)
+            if n <= 0:
+                await check_token_matcher.finish("查询次数必须大于 0 哦~")
+            start_idx = 0
+            end_idx = min(n, total_records)
+            
+        else:
+            await check_token_matcher.finish("无法识别的参数！支持的格式: 5、10-15、-10")
+
+    # 边界检查
+    if start_idx >= total_records:
+        await check_token_matcher.finish(f"超出范围啦！当前总共只有 {total_records} 条记录哦。")
+
+    # 切片提取所需数据
+    display_list = history_list[start_idx:end_idx]
+    
+    # 动态生成标题
+    if arg.startswith('-'):
+        title = f"📊 最远的 {len(display_list)} 次 API 调用消耗："
+    elif '-' in arg:
+        title = f"📊 第 {start_idx + 1} 到 {end_idx} 次 API 调用消耗："
+    else:
+        title = f"📊 最近 {len(display_list)} 次 API 调用消耗："
+
+    msg = title + "\n"
+    
+    # enumerate 传入 start_idx + 1，保证序号和实际位置一致
+    for idx, record in enumerate(display_list, start_idx + 1):
+        msg += f"[{idx}] {record['time']} | {record['model']}\n"
+        msg += f" ├ 提示词: {record['prompt']} (其中命中缓存: {record.get('cache', 0)})\n"
+        msg += f" ├ 生成:   {record['completion']}\n"
+        msg += f" └ 总计:   {record['total']}\n"
+        
+    await check_token_matcher.finish(msg.strip())
 
 # 优先级10，不会向下阻断，条件：戳一戳bot触发
 poke_ = on_notice(rule=to_me(), priority=11, block=False)

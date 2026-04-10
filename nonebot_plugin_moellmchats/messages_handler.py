@@ -100,8 +100,12 @@ class MessagesHandler:
 
     # 后处理
     def post_process(self, assistant_msg: str = None, tool_memory: str = ""):
+        # 如果大模型最终没有输出文本，我们可以用它刚生成的隐藏记忆作为替代品存入历史
         if not assistant_msg or not assistant_msg.strip():
-            assistant_msg = "（已完成操作）"
+            if tool_memory:
+                assistant_msg = f"（已在后台静默执行工具完毕，获得了相关数据：{tool_memory[:100]}...）"
+            else:
+                assistant_msg = "（已完成操作）"
 
         self.messages_entity.add_assistant_msg(
             {"role": "assistant", "content": assistant_msg}

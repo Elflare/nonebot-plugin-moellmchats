@@ -187,7 +187,7 @@ def build_schema_from_func(func) -> dict:
     }
     
     for param_name, param in sig.parameters.items():
-        if param_name in ('self', 'cls'):
+        if param_name in ('self', 'cls') or param_name.startswith('_'):
             continue
             
         hint = type_hints.get(param_name, str)

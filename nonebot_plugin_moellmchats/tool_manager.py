@@ -43,8 +43,8 @@ class ToolManager:
         self.custom_tools_dir.mkdir(parents=True, exist_ok=True)
 
         template_file = self.custom_tools_dir / "example.py"
-        # 如果是首次创建文件夹，且模板文件不存在，则生成网页提取模板
-        if is_first_time_dir or not list(self.custom_tools_dir.glob("*.py")):
+        # 如果是首次创建文件夹，则生成模板
+        if is_first_time_dir:
             template_content = '''
 """
 这是一个自定义大模型工具（Function Calling）的示例文件。
@@ -140,6 +140,7 @@ async def extract_webpage(
         self.custom_tools.clear()
         # 每次重载前清空旧的依赖，防止热重载时叠加死循环
         self.tool_dependencies = {}
+        error_count = 0
         for file in self.custom_tools_dir.glob("*.py"):
             if file.name.startswith("__"):
                 continue
@@ -158,7 +159,9 @@ async def extract_webpage(
                             self.tool_dependencies.setdefault(
                                 trigger_tool, set()
                             ).update(deps)
-                            logger.debug(f"文件 {file.name} 注入了依赖: {trigger_tool} -> {deps}")
+                            logger.debug(
+                                f"文件 {file.name} 注入了依赖: {trigger_tool} -> {deps}"
+                            )
                     # 规范：要求用户在自定义脚本中定义一个 TOOLS_REGISTRY 列表
                     if hasattr(module, "TOOLS_REGISTRY"):
                         # 兼容老写法：直接读取
@@ -178,8 +181,10 @@ async def extract_webpage(
                                 self.custom_tools[schema["name"]] = schema
                 except Exception as e:
                     logger.error(f"加载自定义工具文件 {file.name} 失败: {e}")
+                    error_count += 1
         logger.debug(f"最终的工具依赖拓扑: {self.tool_dependencies}")
         logger.debug(f"最终加载的自定义工具: {list(self.custom_tools.keys())}")
+        return error_count
 
     def expand_dependencies(self, plugins: set) -> set:
         """
@@ -193,7 +198,9 @@ async def extract_webpage(
             if current in self.tool_dependencies:
                 for dep in self.tool_dependencies[current]:
                     if dep not in expanded:
-                        logger.debug(f"尝试注入依赖 [{dep}]。存在性检查 custom_tools: {dep in getattr(self, 'custom_tools', {})}, plugin_info: {dep in getattr(self, 'plugin_info', {})}")
+                        logger.debug(
+                            f"尝试注入依赖 [{dep}]。存在性检查 custom_tools: {dep in getattr(self, 'custom_tools', {})}, plugin_info: {dep in getattr(self, 'plugin_info', {})}"
+                        )
                         # 确保依赖的工具确实施加在了已加载的工具列表中
                         if dep in getattr(self, "custom_tools", {}) or dep in getattr(
                             self, "plugin_info", {}
