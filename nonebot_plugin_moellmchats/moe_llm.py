@@ -47,12 +47,12 @@ class MoeLlm:
     def prompt_handler(self):
         """处理动态上下文（时间、状态、群聊记录、工具记忆）"""
         dynamic_context_parts = []
-        # 注入时间和用户ID
+        user_id = self.event.sender.card or self.event.sender.nickname
+        # 注入时间
         if config_parser.get_config("show_datetime"):
             now = datetime.datetime.now()
             time_str = now.strftime("%Y年%m月%d日 %H:%M:%S")
             dynamic_context_parts.append(f"当前系统时间: {time_str}。")
-        dynamic_context_parts.append(f"当前用户的id是{self.event.sender.card or self.event.sender.nickname}。")
         # 仅当不是"ai助手"时，才注入性格设定、表情包和群聊/私聊环境上下文
         if self.temperament != "ai助手":
             emotion_prompt = ""
@@ -67,6 +67,8 @@ class MoeLlm:
                 dynamic_context_parts.append("\n".join(context_dict_))
             else:
                 dynamic_context_parts.append(emotion_prompt)
+        # 用户ID放在最后，紧贴当前消息，避免被群聊记录干扰
+        dynamic_context_parts.append(f"注意：本条消息由【{user_id}】发送，请回复该用户。")
         self.dynamic_context = "\n".join(dynamic_context_parts)
 
     def _record_token_usage(self, usage: dict):

@@ -420,10 +420,10 @@ async def _close_http_session():
     await close_session()
 
 
-# 机器人启动时自动获取并刷新模型缓存
+# 机器人启动时在后台异步刷新模型缓存，不阻塞 Bot 启动
 @get_driver().on_startup
 async def _auto_fetch_models():
-    await model_selector.fetch_models_from_providers()
+    asyncio.create_task(model_selector.fetch_models_from_providers())
 
 
 # 超级管理员可手动触发模型刷新
