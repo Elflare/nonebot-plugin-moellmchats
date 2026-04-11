@@ -12,16 +12,14 @@ from .model_selector import model_selector
 from .messages_handler import MessagesHandler
 from .config import config_parser
 from .temperament_manager import temperament_manager
-from .utils import get_emotions_names, get_emotion, parse_emotion
+from .utils import get_emotions_names, get_emotion, parse_emotion, get_session
 import random
 from .tool_manager import tool_manager
 from .event_simulator import event_simulator
 import inspect
 import datetime
 
-context_dict = defaultdict(
-    lambda: deque(maxlen=config_parser.get_config("max_group_history"))
-)
+context_dict = defaultdict(lambda: deque(maxlen=config_parser.get_config("max_group_history")))
 # token消耗记录
 token_usage_history = deque(maxlen=50)
 
@@ -54,41 +52,39 @@ class MoeLlm:
             now = datetime.datetime.now()
             time_str = now.strftime("%Y年%m月%d日 %H:%M:%S")
             dynamic_context_parts.append(f"当前系统时间: {time_str}。")
-        dynamic_context_parts.append(
-            f"当前用户的id是{self.event.sender.card or self.event.sender.nickname}。"
-        )
-        # 仅当不是“ai助手”时，才注入性格设定、表情包和群聊/私聊环境上下文
+        dynamic_context_parts.append(f"当前用户的id是{self.event.sender.card or self.event.sender.nickname}。")
+        # 仅当不是"ai助手"时，才注入性格设定、表情包和群聊/私聊环境上下文
         if self.temperament != "ai助手":
             emotion_prompt = ""
-            if config_parser.get_config(
-                "emotions_enabled"
-            ) and random.random() < config_parser.get_config("emotion_rate"):
+            if config_parser.get_config("emotions_enabled") and random.random() < config_parser.get_config("emotion_rate"):
                 self.emotion_flag = True
                 emotion_prompt = f"。回复时根据回答内容，发送表情包，每次回复最多发一个表情包，格式为中括号+表情包名字，如：[表情包名字]。可选表情有{get_emotions_names()}"
 
             if hasattr(self.event, "group_id"):
-                dynamic_context_parts.append(
-                    f"现在你在一个qq群中,你只需回复用户。{emotion_prompt}。"
-                )
-                dynamic_context_parts.append(
-                    "群里近期聊天内容，冒号前面是id，后面是内容："
-                )
+                dynamic_context_parts.append(f"现在你在一个qq群中,你只需回复用户。{emotion_prompt}。")
+                dynamic_context_parts.append("群里近期聊天内容，冒号前面是id，后面是内容：")
                 context_dict_ = list(context_dict[self.event.group_id])[:-1]
                 dynamic_context_parts.append("\n".join(context_dict_))
             else:
                 dynamic_context_parts.append(emotion_prompt)
-        # 处理工具记忆
-        tool_memory_context = []
-        for entity in self.messages_handler.messages_entity_list:
-            if entity.tool_memory:
-                tool_memory_context.append(entity.tool_memory)
-
-        if tool_memory_context:
-            dynamic_context_parts.append(
-                "\n【系统提示：历史工具执行记录】\n" + "\n".join(tool_memory_context)
-            )
-
         self.dynamic_context = "\n".join(dynamic_context_parts)
+
+    def _record_token_usage(self, usage: dict):
+        """将 API 返回的 token 消耗记录写入历史"""
+        prompt_tokens = usage.get("prompt_tokens", 0)
+        completion_tokens = usage.get("completion_tokens", 0)
+        total_tokens = usage.get("total_tokens", 0)
+        cache_hit = usage.get("prompt_tokens_details", {}).get("cached_tokens", 0) or usage.get("prompt_cache_hit_tokens", 0)
+        token_usage_history.appendleft(
+            {
+                "time": datetime.datetime.now().strftime("%m-%d %H:%M:%S"),
+                "model": self.model_info["model"],
+                "prompt": prompt_tokens,
+                "cache": cache_hit,
+                "completion": completion_tokens,
+                "total": total_tokens,
+            }
+        )
 
     async def send_emotion_message(self, content: str) -> str:
         """处理和发送表情包
@@ -106,27 +102,25 @@ class MoeLlm:
             await self.bot.send(self.event, content)
         return content
 
+    def _extract_api_error_detail(self, error_text: str) -> str:
+        """从 API 错误响应中提取简短原因，解析失败时返回空字符串。"""
+        try:
+            err_json = json.loads(error_text)
+            if isinstance(err_json, dict):
+                if "error" in err_json and isinstance(err_json["error"], dict):
+                    return err_json["error"].get("message", "")
+                return err_json.get("message", "") or err_json.get("msg", "")
+        except Exception:
+            pass
+        return ""
+
     async def _check_400_error(self, response, request_data=None) -> str:
         """检查是否为400错误及敏感内容拦截，返回错误提示或None"""
         if response.status == 400:
             error_content = await response.text()
             logger.warning(f"API请求400错误: {error_content}")
             # 1. 尝试解析 API 返回的具体报错信息
-            detail_msg = ""
-            try:
-                # 大多数模型厂商返回的错误都是 JSON 格式
-                error_json = json.loads(error_content)
-                if isinstance(error_json, dict):
-                    # 兼容 OpenAI / DeepSeek 格式: {"error": {"message": "..."}}
-                    if "error" in error_json and isinstance(error_json["error"], dict):
-                        detail_msg = error_json["error"].get("message", "")
-                    # 兼容其他格式: {"message": "..."} 或 {"msg": "..."}
-                    else:
-                        detail_msg = error_json.get("message", "") or error_json.get(
-                            "msg", ""
-                        )
-            except Exception:
-                pass  # 如果解析失败（比如返回了HTML页面），则保持原样不提取
+            detail_msg = self._extract_api_error_detail(error_content)
             # 2. 敏感词拦截逻辑保持不变
             sensitive_keywords = [
                 "DataInspectionFailed",  # 阿里
@@ -146,9 +140,7 @@ class MoeLlm:
                         request_data = json.loads(request_data)
                     except Exception:
                         pass
-                logger.warning(
-                    f"【导致400错误的完整Payload】:\n{json.dumps(request_data, ensure_ascii=False, indent=2)}"
-                )
+                logger.warning(f"【导致400错误的完整Payload】:\n{json.dumps(request_data, ensure_ascii=False, indent=2)}")
             else:
                 logger.warning(f"看看之前的对话记录：{self.format_message_dict}")
 
@@ -156,9 +148,7 @@ class MoeLlm:
             error_reply = "API请求被拒绝 (400)"
             if detail_msg:
                 # 截取前150个字符，防止大段长英文代码刷屏，影响群聊体验
-                truncated_msg = (
-                    detail_msg[:150] + "..." if len(detail_msg) > 150 else detail_msg
-                )
+                truncated_msg = detail_msg[:150] + "..." if len(detail_msg) > 150 else detail_msg
                 error_reply += f"\n原因：{truncated_msg}"
             else:
                 error_reply += "，请检查后台日志。"
@@ -167,19 +157,18 @@ class MoeLlm:
 
         return None
 
-    async def stream_llm_chat(
-        self, session, url, headers, data, proxy, is_segment=False
-    ) -> tuple[bool, str, list]:
+    async def stream_llm_chat(self, session, url, headers, data, proxy, is_segment=False, timeout=None) -> tuple[bool, str, list]:
         # 流式响应内容
         buffer = []
         assistant_result = []  # 后处理助手回复
         punctuation_buffer = ""  # 存标点
         is_second_send = False  # 不是第一次发送
+        current_content = ""  # 最近一次已发出的分段内容
 
         is_thinking = False  # 状态机：是否在思考中
         tag_buffer = ""  # 用于精准匹配标签切片
 
-        async with session.post(url, headers=headers, json=data, proxy=proxy) as resp:
+        async with session.post(url, headers=headers, json=data, proxy=proxy, timeout=timeout) as resp:
             if error_msg := await self._check_400_error(resp, request_data=data):
                 return False, error_msg, None
             # 确保响应是成功的
@@ -189,12 +178,7 @@ class MoeLlm:
                 current_segment = 0
                 jump_out = False  # 判断是否跳出循环
                 async for line in resp.content:
-                    if (
-                        not line
-                        or line.startswith(b"data: [DONE]")
-                        or line.startswith(b"[DONE]")
-                        or jump_out
-                    ):
+                    if not line or line.startswith(b"data: [DONE]") or line.startswith(b"[DONE]") or jump_out:
                         break  # 结束标记，退出循环
 
                     if line.startswith(b"data:"):
@@ -206,28 +190,7 @@ class MoeLlm:
 
                     json_data = json.loads(decoded)
                     if usage := json_data.get("usage"):
-                        # 根据最新文档，直接提取标准字段
-                        prompt_tokens = usage.get("prompt_tokens", 0)
-                        completion_tokens = usage.get("completion_tokens", 0)
-                        total_tokens = usage.get("total_tokens", 0)
-
-                        # 提取缓存命中 Token (兼容通义千问 Qwen 的 prompt_tokens_details 结构，以及 DeepSeek 的扁平结构)
-                        cache_hit = usage.get("prompt_tokens_details", {}).get(
-                            "cached_tokens", 0
-                        ) or usage.get("prompt_cache_hit_tokens", 0)
-
-                        token_usage_history.appendleft(
-                            {
-                                "time": datetime.datetime.now().strftime(
-                                    "%m-%d %H:%M:%S"
-                                ),
-                                "model": self.model_info["model"],
-                                "prompt": prompt_tokens,
-                                "cache": cache_hit,
-                                "completion": completion_tokens,
-                                "total": total_tokens,
-                            }
-                        )
+                        self._record_token_usage(usage)
                     content = ""
                     # 以此尝试获取完整消息或流式增量
                     choices = json_data.get("choices", [{}])
@@ -245,16 +208,11 @@ class MoeLlm:
                                 tag_buffer = tag_buffer[-15:]
 
                             # 拦截思考开始
-                            if not is_thinking and (
-                                tag_buffer.endswith("<thought>")
-                                or tag_buffer.endswith("<think>")
-                            ):
+                            if not is_thinking and (tag_buffer.endswith("<thought>") or tag_buffer.endswith("<think>")):
                                 is_thinking = True
                                 # 思考标签的字符已经漏进 buffer 了，给它揪出来删掉
                                 tag_len = 9 if tag_buffer.endswith("<thought>") else 7
-                                for _ in range(
-                                    tag_len - 1
-                                ):  # -1是因为当前char还没加进去
+                                for _ in range(tag_len - 1):  # -1是因为当前char还没加进去
                                     if punctuation_buffer:
                                         punctuation_buffer = punctuation_buffer[:-1]
                                     elif buffer:
@@ -262,10 +220,7 @@ class MoeLlm:
                                 continue
 
                             # 拦截思考结束
-                            if is_thinking and (
-                                tag_buffer.endswith("</thought>")
-                                or tag_buffer.endswith("</think>")
-                            ):
+                            if is_thinking and (tag_buffer.endswith("</thought>") or tag_buffer.endswith("</think>")):
                                 is_thinking = False
                                 continue
 
@@ -282,29 +237,19 @@ class MoeLlm:
                                 else:
                                     if punctuation_buffer:
                                         # 发送累积的标点内容
-                                        current_content = (
-                                            "".join(buffer) + punctuation_buffer
-                                        ).strip()
+                                        current_content = ("".join(buffer) + punctuation_buffer).strip()
                                         if current_content.strip():
                                             if current_segment >= MAX_SEGMENTS:
                                                 TOO_LANG = "太长了，不发了"
                                                 buffer = [TOO_LANG]
                                                 jump_out = True
                                                 break
-                                            if (
-                                                is_second_send
-                                            ):  # 第二次开始，会等几秒再发送
-                                                await asyncio.sleep(
-                                                    2 + len(current_content) / 3
-                                                )
+                                            if is_second_send:  # 第二次开始，会等几秒再发送
+                                                await asyncio.sleep(2 + len(current_content) / 3)
                                             else:
                                                 is_second_send = True
                                             # 处理表情包和发送
-                                            current_content = (
-                                                await self.send_emotion_message(
-                                                    current_content
-                                                )
-                                            )
+                                            current_content = await self.send_emotion_message(current_content)
                                             current_segment += 1
                                             assistant_result.append(current_content)
                                         buffer = []
@@ -321,11 +266,7 @@ class MoeLlm:
                     result = "".join(buffer) + punctuation_buffer
 
                 if is_second_send:
-                    # 避免最后发空消息计算报错
-                    current_len = (
-                        len(current_content) if "current_content" in locals() else 0
-                    )
-                    await asyncio.sleep(2 + current_len / 3)
+                    await asyncio.sleep(2 + len(current_content) / 3)
                 else:
                     is_second_send = True
 
@@ -335,51 +276,40 @@ class MoeLlm:
                 elif is_second_send:
                     return True, "".join(assistant_result), None
             else:
-                logger.warning(f"Warning: {resp}")
+                error_text = await resp.text()
+                logger.warning(f"API返回非200状态码 {resp.status}: {error_text}")
+                detail = self._extract_api_error_detail(error_text)
+                error_reply = f"API请求异常 (HTTP {resp.status})"
+                if detail:
+                    error_reply += f"\n原因：{detail[:150]}{'...' if len(detail) > 150 else ''}"
+                return False, error_reply, None
         return False, "API请求异常", None
 
-    async def none_stream_llm_chat(
-        self, session, url, headers, data, proxy
-    ) -> tuple[bool, str, list]:
-        async with session.post(
-            url=url, data=data, headers=headers, ssl=False, proxy=proxy
-        ) as resp:
+    async def none_stream_llm_chat(self, session, url, headers, data, proxy, timeout=None) -> tuple[bool, str, list]:
+        async with session.post(url=url, json=data, headers=headers, proxy=proxy, timeout=timeout) as resp:
             if error_msg := await self._check_400_error(resp, request_data=data):
                 return False, error_msg, None
+            if resp.status != 200:
+                error_text = await resp.text()
+                logger.warning(f"API返回非200状态码 {resp.status}: {error_text}")
+                detail = self._extract_api_error_detail(error_text)
+                error_reply = f"API返回异常 (HTTP {resp.status})"
+                if detail:
+                    error_reply += f"\n原因：{detail[:150]}{'...' if len(detail) > 150 else ''}"
+                return False, error_reply, None
             response = await resp.json()
-            if resp.status != 200 or not response:
-                logger.warning(response)
-                return False, "API返回异常", None
+            if not response:
+                logger.warning("API返回空响应")
+                return False, "API返回异常：响应体为空", None
 
         if choices := response.get("choices"):
             if usage := response.get("usage"):
-                # 根据最新文档，直接提取标准字段
-                prompt_tokens = usage.get("prompt_tokens", 0)
-                completion_tokens = usage.get("completion_tokens", 0)
-                total_tokens = usage.get("total_tokens", 0)
-
-                # 提取缓存命中 Token (兼容通义千问 Qwen 的 prompt_tokens_details 结构，以及 DeepSeek 的扁平结构)
-                cache_hit = usage.get("prompt_tokens_details", {}).get(
-                    "cached_tokens", 0
-                ) or usage.get("prompt_cache_hit_tokens", 0)
-
-                token_usage_history.appendleft(
-                    {
-                        "time": datetime.datetime.now().strftime("%m-%d %H:%M:%S"),
-                        "model": self.model_info["model"],
-                        "prompt": prompt_tokens,
-                        "cache": cache_hit,
-                        "completion": completion_tokens,
-                        "total": total_tokens,
-                    }
-                )
+                self._record_token_usage(usage)
             message = choices[0]["message"]
             content = message.get("content", "")
             # 清理思考内容
             if content:
-                content = re.sub(
-                    r"<(think|thought)>.*?</\1>", "", content, flags=re.DOTALL
-                )
+                content = re.sub(r"<(think|thought)>.*?</\1>", "", content, flags=re.DOTALL)
                 content = content.strip()
 
             # 清洗完再判断并返回 tool_calls
@@ -394,43 +324,31 @@ class MoeLlm:
     async def _prepare_model_info(self, plain: str):
         """预处理：获取模型信息、处理难度分类与视觉判断"""
         self.required_plugins = []
-        if (
-            model_selector.get_moe()
-            or model_selector.get_web_search()
-            or model_selector.get_use_tools()
-        ):
+        if model_selector.get_moe() or model_selector.get_web_search() or model_selector.get_use_tools():
             category = Categorize(plain)
             category_result = await category.get_category()
             if isinstance(category_result, str):
                 return category_result
             if isinstance(category_result, tuple):
                 difficulty, vision_required, required_plugins = category_result
-                logger.info(
-                    f"难度：{difficulty}, 视觉：{vision_required}, 需要插件：{required_plugins}"
-                )
+                logger.info(f"难度：{difficulty}, 视觉：{vision_required}, 需要插件：{required_plugins}")
                 self.required_plugins = required_plugins
                 # 无论是否开启MoE，只要触发视觉且有图片，优先走视觉模型
                 if vision_required and self.messages_handler.current_images:
                     vision_model_key = model_selector.model_config.get("vision_model")
                     if vision_model_key:
                         self.model_info = model_selector.get_model("vision_model")
-                        logger.info(
-                            f"触发视觉任务，切换至视觉模型: {self.model_info['model']}"
-                        )
+                        logger.info(f"触发视觉任务，切换至视觉模型: {self.model_info['model']}")
                     else:
-                        logger.info(
-                            "触发视觉任务，但未配置 vision_model 字段，退回普通模型/MoE模型"
-                        )
+                        logger.info("触发视觉任务，但未配置 vision_model 字段，退回普通模型/MoE模型")
                         if model_selector.get_moe():
-                            self.model_info = model_selector.get_moe_current_model(
-                                difficulty
-                            )
+                            self.model_info = model_selector.get_moe_current_model(difficulty)
                 # 纯文本任务，若开启了MoE，则分配对应难度的模型
                 elif model_selector.get_moe():
                     self.model_info = model_selector.get_moe_current_model(difficulty)
 
         # 兜底：既没触发视觉，也没开启MoE，或者啥都没开启（原逻辑），使用默认模型
-        if not hasattr(self, "model_info") or not self.model_info:
+        if not self.model_info:
             self.model_info = model_selector.get_model("selected_model")
         logger.info(f"模型选择为：{self.model_info['model']}")
         return None
@@ -438,15 +356,11 @@ class MoeLlm:
     def _build_payload(self, send_message_list: list) -> tuple[dict, bool]:
         """构建发给大模型的 payload 与工具 schema"""
         if self.model_info.get("is_vision") and self.messages_handler.current_images:
-            logger.info(
-                f"检测到多模态模型 {self.model_info['model']} 且存在图片，正在构建多模态请求..."
-            )
+            logger.info(f"检测到多模态模型 {self.model_info['model']} 且存在图片，正在构建多模态请求...")
             current_msg = send_message_list[-1]
             vision_content = [{"type": "text", "text": current_msg["content"]}]
             for img_url in self.messages_handler.current_images:
-                vision_content.append(
-                    {"type": "image_url", "image_url": {"url": img_url}}
-                )
+                vision_content.append({"type": "image_url", "image_url": {"url": img_url}})
             send_message_list[-1] = {
                 "role": current_msg["role"],
                 "content": vision_content,
@@ -468,24 +382,19 @@ class MoeLlm:
         resident_plugins = set(model_selector.get_resident_plugins())
         # 通过并集操作 (|) 自动合并并去重：分类模型返回的 + 历史使用的 + 常驻的
         all_plugins_set = (
-            set(getattr(self, "required_plugins", []))
-            | self.messages_handler.get_all_used_plugins()
-            | resident_plugins
+            set(getattr(self, "required_plugins", [])) | self.messages_handler.get_all_used_plugins() | resident_plugins
         )
         all_plugins_set = tool_manager.expand_dependencies(all_plugins_set)
         logger.debug(f"LLM 最终将要注入的插件集合: {all_plugins_set}")
         all_plugins = list(all_plugins_set)
 
+        model_supports_tools = model_selector.get_use_tools() and not self.model_info.get("no_tools", False)
         if all_plugins:
             normal_plugins = [p for p in all_plugins if p != "web_search"]
-            if model_selector.get_use_tools() and normal_plugins:
-                tools_schema.extend(
-                    tool_manager.get_tool_schema(normal_plugins, include_search=False)
-                )
-            if model_selector.get_web_search() and "web_search" in all_plugins:
-                tools_schema.extend(
-                    tool_manager.get_tool_schema([], include_search=True)
-                )
+            if model_supports_tools and normal_plugins:
+                tools_schema.extend(tool_manager.get_tool_schema(normal_plugins, include_search=False))
+            if model_supports_tools and model_selector.get_web_search() and "web_search" in all_plugins:
+                tools_schema.extend(tool_manager.get_tool_schema([], include_search=True))
 
         if tools_schema:
             data["tools"] = tools_schema
@@ -500,26 +409,18 @@ class MoeLlm:
             data["stream_options"] = {"include_usage": True}
         return data, current_stream_flag
 
-    async def _execute_tools(
-        self, tool_calls: list, result_text: str, send_message_list: list
-    ) -> list:
-        """执行工具调用，并更新消息列表和本地隐藏记忆"""
+    async def _execute_tools(self, tool_calls: list, result_text: str, send_message_list: list) -> list:
+        """执行工具调用，并更新消息列表"""
         for call in tool_calls:
-            if (
-                not call.get("function", {}).get("arguments")
-                or not str(call["function"]["arguments"]).strip()
-            ):
+            if not call.get("function", {}).get("arguments") or not str(call["function"]["arguments"]).strip():
                 call["function"]["arguments"] = "{}"
 
         assistant_msg = {
             "role": "assistant",
-            "content": str(result_text)
-            if result_text and str(result_text).strip()
-            else "（正在调用工具）",
+            "content": str(result_text) if result_text and str(result_text).strip() else "（正在调用工具）",
             "tool_calls": tool_calls,
         }
         send_message_list.append(assistant_msg)
-        tool_memory_list = []
         text_to_send = result_text  # 暂存大模型回复文本，防止多个插件时被重复发送
         for call in tool_calls:
             func_name = call["function"]["name"]
@@ -558,11 +459,7 @@ class MoeLlm:
                         args["_bot"] = self.bot
                     if "_event" in sig.parameters:
                         args["_event"] = self.event
-                    res = (
-                        await func(**args)
-                        if inspect.iscoroutinefunction(func)
-                        else func(**args)
-                    )
+                    res = await func(**args) if inspect.iscoroutinefunction(func) else func(**args)
                     tool_result = str(res)
                 except Exception as e:
                     logger.error(traceback.format_exc())
@@ -574,9 +471,7 @@ class MoeLlm:
                 else:
                     await self.bot.send(self.event, f"正在执行指令: {func_name}...")
                 command = args.get("command", "")
-                tool_result = await event_simulator.dispatch_event(
-                    self.bot, self.event, command
-                )
+                tool_result = await event_simulator.dispatch_event(self.bot, self.event, command)
 
             send_message_list.append(
                 {
@@ -585,13 +480,29 @@ class MoeLlm:
                     "content": tool_result,
                 }
             )
-            tool_memory_list.append(
-                f"【系统环境背景：工具 {func_name} 已执行，参数 {args}，结果：{tool_result[:2000]}】"
-            )
 
-        if getattr(self, "current_tool_memory", ""):
-            self.current_tool_memory += "\n"
-        self.current_tool_memory += "\n".join(tool_memory_list)
+        # 将本 round 的工具消息（截断结果）追加到历史记录 entity，供下轮对话使用
+        HISTORY_TOOL_RESULT_LIMIT = 300
+        history_msgs = [
+            {
+                "role": "assistant",
+                "content": assistant_msg["content"],
+                "tool_calls": tool_calls,
+            }
+        ]
+        for call in tool_calls:
+            tool_result_content = next(
+                (m["content"] for m in reversed(send_message_list) if m.get("role") == "tool" and m.get("tool_call_id") == call["id"]),
+                "",
+            )
+            history_msgs.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": tool_result_content[:HISTORY_TOOL_RESULT_LIMIT],
+                }
+            )
+        self.messages_handler.messages_entity.tool_messages.extend(history_msgs)
         return send_message_list
 
     async def get_llm_chat(self) -> str:
@@ -604,7 +515,8 @@ class MoeLlm:
             return prep_result
 
         self.prompt_handler()
-        send_message_list = self.messages_handler.get_send_message_list()
+        supports_tools = model_selector.get_use_tools() and not self.model_info.get("no_tools", False)
+        send_message_list = self.messages_handler.get_send_message_list(supports_tools=supports_tools)
         # 1. 将完全静态的 System Prompt 插入头部，确保命中前缀缓存
         send_message_list.insert(0, {"role": "system", "content": self.prompt})
         # 2. 如果存在动态上下文，作为一条独立的 system 消息插入到最后一条 user 消息之前
@@ -613,9 +525,7 @@ class MoeLlm:
             last_user_msg = send_message_list.pop()
 
             # 插入动态系统消息
-            send_message_list.append(
-                {"role": "system", "content": f"系统环境：\n{self.dynamic_context}"}
-            )
+            send_message_list.append({"role": "system", "content": f"系统环境：\n{self.dynamic_context}"})
 
             # 把用户消息放回最后
             send_message_list.append(last_user_msg)
@@ -628,95 +538,93 @@ class MoeLlm:
             "Accept-Encoding": "identity",
         }
 
-        self.current_tool_memory = ""
         max_tool_rounds = config_parser.get_config("max_tool_rounds") or 3
         max_retry_times = config_parser.get_config("max_retry_times") or 3
 
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=300)
-        ) as session:
-            # 修改：增加上限至 max_tool_rounds + 1，以容纳最后一次强制总结
-            for tool_round in range(max_tool_rounds + 1):
-                result_text = ""
-                success = False
-                tool_calls = None
+        session = get_session()
+        llm_timeout = aiohttp.ClientTimeout(total=300)
+        # 修改：增加上限至 max_tool_rounds + 1，以容纳最后一次强制总结
+        for tool_round in range(max_tool_rounds + 1):
+            result_text = ""
+            success = False
+            tool_calls = None
 
-                # 达到最大轮次时，移除工具强制总结
-                if tool_round == max_tool_rounds:
-                    data.pop("tools", None)
-                    current_stream_flag = data["stream"]
-                    send_message_list.append(
-                        {
-                            "role": "user",
-                            "content": "系统提示：工具自动调用次数已达当前轮次上限。请根据前序步骤收集到的隐藏记录信息，得出初步结论或阶段性总结。如果任务未彻底完成，请直接在回复末尾主动询问用户是否需要继续执行。",
-                        }
+            # 达到最大轮次时，移除工具强制总结
+            if tool_round == max_tool_rounds:
+                data.pop("tools", None)
+                current_stream_flag = data["stream"]
+                send_message_list.append(
+                    {
+                        "role": "user",
+                        "content": "系统提示：工具自动调用次数已达当前轮次上限。请根据前序步骤收集到的隐藏记录信息，得出初步结论或阶段性总结。如果任务未彻底完成，请直接在回复末尾主动询问用户是否需要继续执行。",
+                    }
+                )
+
+            # 网络请求重试逻辑
+            for retry_times in range(max_retry_times):
+                if retry_times > 0:
+                    await self.bot.send(
+                        self.event,
+                        f"api又卡了呐！第 {retry_times+1} 次尝试，请勿多次发送~",
                     )
-
-                # 网络请求重试逻辑
-                for retry_times in range(max_retry_times):
-                    if retry_times > 0:
-                        await self.bot.send(
-                            self.event,
-                            f"api又卡了呐！第 {retry_times+1} 次尝试，请勿多次发送~",
+                    await asyncio.sleep(2 ** (retry_times + 1))
+                try:
+                    if current_stream_flag:
+                        (
+                            success,
+                            result_text,
+                            tool_calls,
+                        ) = await self.stream_llm_chat(
+                            session,
+                            self.model_info["url"],
+                            headers,
+                            data,
+                            self.model_info.get("proxy"),
+                            self.model_info.get("is_segment"),
+                            llm_timeout,
                         )
-                        await asyncio.sleep(2 ** (retry_times + 1))
-                    try:
-                        if current_stream_flag:
-                            (
-                                success,
-                                result_text,
-                                tool_calls,
-                            ) = await self.stream_llm_chat(
-                                session,
-                                self.model_info["url"],
-                                headers,
-                                data,
-                                self.model_info.get("proxy"),
-                                self.model_info.get("is_segment"),
-                            )
-                        else:
-                            (
-                                success,
-                                result_text,
-                                tool_calls,
-                            ) = await self.none_stream_llm_chat(
-                                session,
-                                self.model_info["url"],
-                                headers,
-                                json.dumps(data),
-                                self.model_info.get("proxy"),
-                            )
-                        if success:
-                            break
-                    except TimeoutError:
-                        result_text = "网络超时呐，多半是api反应太慢（"
-                    except Exception:
-                        logger.warning(str(send_message_list))
-                        logger.error(traceback.format_exc())
-                        continue
-
-                if not success:
-                    return result_text or "api寄！"
-
-                # 3. 执行工具调用（非总结轮次才执行）
-                if tool_calls and tool_round < max_tool_rounds:
-                    send_message_list = await self._execute_tools(
-                        tool_calls, result_text, send_message_list
-                    )
-                    data["messages"] = send_message_list
+                    else:
+                        (
+                            success,
+                            result_text,
+                            tool_calls,
+                        ) = await self.none_stream_llm_chat(
+                            session,
+                            self.model_info["url"],
+                            headers,
+                            data,
+                            self.model_info.get("proxy"),
+                            llm_timeout,
+                        )
+                    if success:
+                        break
+                except TimeoutError:
+                    result_text = "网络超时呐，多半是api反应太慢（"
+                except Exception:
+                    logger.warning(str(send_message_list))
+                    logger.error(traceback.format_exc())
                     continue
 
-                # ===== 循环结束分支（无工具调用或已达到总结轮次） =====
-                if not current_stream_flag and result_text:
-                    result_text = await self.send_emotion_message(result_text)
+            if not success:
+                return result_text or "api寄！"
 
-                # 修改：统一并完整保存上下文，用户说“继续”时大模型能够回想起 current_tool_memory 里的内容
-                if not self.is_objective:
-                    self.messages_handler.post_process(
-                        assistant_msg=result_text,
-                        tool_memory=getattr(self, "current_tool_memory", ""),
-                    )
+            # 3. 执行工具调用（非总结轮次才执行）
+            if tool_calls and tool_round < max_tool_rounds:
+                send_message_list = await self._execute_tools(tool_calls, result_text, send_message_list)
+                data["messages"] = send_message_list
+                continue
 
-                return True
+            # ===== 循环结束分支（无工具调用或已达到总结轮次） =====
+            if not current_stream_flag and result_text:
+                result_text = await self.send_emotion_message(result_text)
+
+            # 统一并完整保存上下文，用户说"继续"时大模型能够回想起历史工具调用记录
+            if not self.is_objective:
+                self.messages_handler.post_process(
+                    assistant_msg=result_text,
+                    tool_messages=self.messages_handler.messages_entity.tool_messages or None,
+                )
+
+            return True
 
         return "请求处理异常结束"

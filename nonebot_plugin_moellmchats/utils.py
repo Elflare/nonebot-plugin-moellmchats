@@ -9,6 +9,7 @@ from traceback import format_exc
 import re
 import inspect
 from typing import get_type_hints, get_origin, get_args, Annotated
+import aiohttp
 
 Bot_NICKNAME: str = list(nonebot.get_driver().config.nickname)[0]  # bot的nickname
 
@@ -228,3 +229,26 @@ def build_schema_from_func(func) -> dict:
         },
         "func": func
     }
+
+
+# ── 全局 aiohttp session ──────────────────────────────────────────────────────
+
+_session: aiohttp.ClientSession | None = None
+
+
+def get_session() -> aiohttp.ClientSession:
+    if _session is None or _session.closed:
+        raise RuntimeError("HTTP session not initialized")
+    return _session
+
+
+async def init_session() -> None:
+    global _session
+    _session = aiohttp.ClientSession()
+
+
+async def close_session() -> None:
+    global _session
+    if _session and not _session.closed:
+        await _session.close()
+        _session = None

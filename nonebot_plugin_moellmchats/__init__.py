@@ -21,6 +21,8 @@ from .utils import (
     hello__reply,
     poke__reply,
     format_message,
+    init_session,
+    close_session,
 )
 from collections import defaultdict
 
@@ -175,13 +177,13 @@ set_moe_matcher = on_command("设置moe", permission=SUPERUSER, priority=10, blo
 async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     is_moe = args.extract_plain_text().strip()
     if is_moe not in ["开", "关", "0", "1"]:
-        await model_matcher.finish("参数错误，格式为：设置moe 开、关、1、0")
+        await set_moe_matcher.finish("参数错误，格式为：设置moe 开、关、1、0")
     if is_moe == "开" or is_moe == "1":
         is_moe = True
     else:
         is_moe = False
     result = model_selector.set_moe(is_moe)
-    await model_matcher.finish(result)
+    await set_moe_matcher.finish(result)
 
 
 set_web_search_matcher = on_command(
@@ -193,13 +195,13 @@ set_web_search_matcher = on_command(
 async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     is_web_search = args.extract_plain_text().strip()
     if is_web_search not in ["开", "关", "0", "1"]:
-        await model_matcher.finish("参数错误，格式为：设置联网 开、关、1、0")
+        await set_web_search_matcher.finish("参数错误，格式为：设置联网 开、关、1、0")
     if is_web_search == "开" or is_web_search == "1":
         is_web_search = True
     else:
         is_web_search = False
     result = model_selector.set_web_search(is_web_search)
-    await model_matcher.finish(result)
+    await set_web_search_matcher.finish(result)
 
 
 moe_matcher = on_command("切换moe", permission=SUPERUSER, priority=10, block=True)
@@ -211,8 +213,8 @@ async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
         difficulty, model_name = args.extract_plain_text().split()
         result = model_selector.set_moe_model(model_name, difficulty)
     except Exception:
-        await model_matcher.finish("参数错误，格式为：切换moe 难度 模型名")
-    await model_matcher.finish(result)
+        await moe_matcher.finish("参数错误，格式为：切换moe 难度 模型名")
+    await moe_matcher.finish(result)
 
 
 vision_model_matcher = on_command(
@@ -407,6 +409,17 @@ async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     await category_model_matcher.finish(result)
 
 
+# 初始化全局 HTTP session（需先于 fetch_models 注册，确保先执行）
+@get_driver().on_startup
+async def _init_http_session():
+    await init_session()
+
+
+@get_driver().on_shutdown
+async def _close_http_session():
+    await close_session()
+
+
 # 机器人启动时自动获取并刷新模型缓存
 @get_driver().on_startup
 async def _auto_fetch_models():
@@ -534,7 +547,7 @@ async def _(event: MessageEvent, args: Message = CommandArg()):
 
 check_resident_matcher = on_command(
     "常驻插件",
-    aliases={"查看常驻插件", "查看常驻函数"},
+    aliases={"查看常驻插件", "查看常驻函数","查看常驻工具"},
     permission=SUPERUSER,
     priority=10,
     block=True,

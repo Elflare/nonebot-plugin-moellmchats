@@ -1,16 +1,18 @@
 import ujson as json
+from json import JSONDecodeError
 from nonebot.log import logger
 import traceback
 import aiohttp
 from .model_selector import model_selector
 from .tool_manager import tool_manager
+from .utils import get_session
 
 
 class Categorize:
     def __init__(self, plain):
         self.plain = plain
 
-    async def get_category(self) -> tuple[int, bool, list]:
+    async def get_category(self) -> tuple[str, bool, list] | str | bool:
         if model_selector.get_use_tools() or model_selector.get_web_search():
             catalog = tool_manager.get_brief_catalog()
             logger.debug(catalog)
@@ -48,7 +50,7 @@ class Categorize:
             category_model_config = model_selector.get_model("selected_model")
             logger.debug("未开启MoE，使用默认模型进行工具/联网/视觉判断分类")
         headers = {
-            "Authorization": model_selector.get_model("category_model")["key"],
+            "Authorization": category_model_config["key"],
             "Content-Type": "application/json",
             "Accept-Encoding": "identity",
         }
@@ -57,7 +59,7 @@ class Categorize:
                 raw_result = ""
                 current_plain = self.plain
                 current_data = {
-                    "model": model_selector.get_model("category_model")["model"],
+                    "model": category_model_config["model"],
                     "messages": [
                         {"role": "system", "content": prompt},
                         {"role": "user", "content": current_plain},
@@ -76,14 +78,13 @@ class Categorize:
 
                 payload = json.dumps(current_data)
 
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        url=model_selector.get_model("category_model")["url"],
-                        data=payload,
-                        headers=headers,
-                        timeout=300,
-                        proxy=model_selector.get_model("category_model").get("proxy"),
-                    ) as resp:
+                async with get_session().post(
+                    url=category_model_config["url"],
+                    data=payload,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=300),
+                    proxy=category_model_config.get("proxy"),
+                ) as resp:
                         # 如果请求因为 response_format 返回 400，主动触发异常进入兜底重试
                         if resp.status == 400 and try_times == 0:
                             err_text = await resp.text()

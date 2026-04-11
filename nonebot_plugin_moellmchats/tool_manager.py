@@ -3,6 +3,7 @@ from nonebot.log import logger
 import ujson as json
 import importlib.util
 from pathlib import Path
+from collections import deque
 from .model_selector import model_selector, config_path
 from .utils import build_schema_from_func
 import inspect
@@ -191,10 +192,10 @@ async def extract_webpage(
         展开工具依赖关系，确保多步任务所需的伴生工具被一并注入。
         """
         expanded = set(plugins)
-        queue = list(plugins)
+        queue = deque(plugins)
 
         while queue:
-            current = queue.pop(0)
+            current = queue.popleft()
             if current in self.tool_dependencies:
                 for dep in self.tool_dependencies[current]:
                     if dep not in expanded:

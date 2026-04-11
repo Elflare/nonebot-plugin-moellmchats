@@ -220,6 +220,11 @@ temperature = 1.2
 [providers.openai.model_configs."o1-preview"]
 stream = false  # 不支持流式的模型单独关闭
 json_mode = true  # <-- 可在此自定义json结构化输出配置，以方便分类模型使用。聊天模型不影响
+
+# 【no_tools】：标记该模型不支持工具调用格式（适用于 MoE 中混入了不支持 Function Calling 的廉价模型）
+# 设置后，该模型本次请求不会注入 tool schema，历史记录中的工具消息也会自动转为普通文本传入
+[providers.some-provider.model_configs."some-cheap-model"]
+no_tools = true
 ```
 
 #### 系统动态缓存 model_cache.json(系统维护)
