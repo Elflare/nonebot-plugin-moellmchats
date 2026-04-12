@@ -9,68 +9,28 @@
 - [🚀 核心特性](#-核心特性)
 - [📦 安装](#-安装)
 - [⚙️ 配置](#️-配置)
-  - [`.env` 配置](#env-配置)
-  - [本插件主要配置](#本插件主要配置)
-    - [基础配置 `config.json`(手动维护)](#基础配置-configjson手动维护)
-    - [服务商配置 `providers.toml`(推荐/自动生成)](#服务商配置-providerstoml推荐自动生成)
-    - [系统动态缓存 model_cache.json(系统维护)](#系统动态缓存-model_cachejson系统维护)
-    - [模型管理 models.json(向下兼容/遗留)](#模型管理-modelsjson向下兼容遗留)
-    - [智能调度配置 `model_config.json`(指令维护)](#智能调度配置-model_configjson指令维护)
-    - [插件自定义描述 `custom_plugin_info.json`(手动维护)](#插件自定义描述-custom_plugin_infojson手动维护)
-    - [原生自定义函数目录 custom_tools/(手动维护)](#原生自定义函数目录-custom_tools手动维护)
-    - [性格设定 `temperaments.json` (手动维护)](#性格设定-temperamentsjson-手动维护)
-    - [用户性格设定 `temperament_config.json` (指令维护)](#用户性格设定-temperament_configjson-指令维护)
 - [🎮 使用](#-使用)
-  - [指令表](#指令表)
-  - [效果图](#效果图)
 - [🔄 处理流程](#-处理流程)
 - [更新日志](#更新日志)
 - [鸣谢](#鸣谢)
 
 ## 🚀 核心特性
 
-- MoE架构（混合专家模型调度）：
+- **MoE架构（混合专家模型调度）**：动态路由至最优模型，支持所有OpenAI兼容接口；智能难度分级（简单/中等/复杂）自动匹配模型，Token消耗降低35%
 
-  - 动态路由至最优模型，支持所有OpenAI兼容接口
-  - 智能难度分级（简单/中等/复杂）自动匹配模型，Token消耗降低35%
+- **智能网络搜索整合**：语义分析自动触发Tavily搜索，提供精准摘要，支持任意LLM
 
-- 智能网络搜索整合：
+- **立体上下文管理**：群组/用户双层级隔离存储，群组滑动窗口，用户滑动窗口+TTL过期机制
 
-  - 语义分析自动触发Tavily搜索，提供精准摘要
-  - 支持任意LLM，大幅节约Token
+- **个性化对话定制**：用户级性格预设，支持动态切换与自定义模板
 
-- 立体上下文管理：
+- **工业级稳定性设计**：对话冷却时间 / 请求队列管理 / 请求失败自动重试
 
-  - 群组/用户双层级隔离存储，群组滑动窗口，用户滑动窗口+TTL过期机制
-  - 支持上下文长度定制（默认群组10条/用户8条）
+- **更加拟人的回复风格**：分段发送回复，每段根据内容长度增加延迟，支持自定义发送表情包
 
-- 个性化对话定制：
+- **多模态视觉支持**：支持识别用户发送或引用的图片（需配置视觉模型如GPT-4o）；双轨路由机制：判定无需看图时自动回退至普通文本模型以节省成本；历史记录自动回退为纯文本，大幅节省Token
 
-  - 用户级性格预设，支持动态切换与自定义模板
-
-- 工业级稳定性设计：
-
-  - 对话冷却时间
-  - 请求队列管理
-  - 请求失败自动重试
-
-- 更加拟人的回复风格：
-
-  - 分段发送回复
-  - 每段根据回复内容长度增加延迟
-  - 自定义发送表情包
-
-- 多模态视觉支持：
-
-  - 支持识别用户发送的图片或引用的图片（需配置具备视觉能力的模型，如 GPT-4o, Claude-3.5）
-  - 双轨路由机制：分类器自动识别用户意图。若判定需要“看图”，将无视难度分级强制路由至视觉专家模型；若判定无需看图（如仅发表情包），则回退至普通文本模型以节省成本
-  - 智能兼容设计：仅在当前对话轮次构建多模态Payload，历史记录自动回退为纯文本，大幅节省 Token 并保持上下文整洁
-
-- 极省Token的工具调用架构（Function Calling）：
-  - 采用“预分类-后注入”的两阶段设计。由轻量级分类模型预判用户的插件调用意图，仅在需要时才将对应的 Tool Schema 注入主模型。
-  - 彻底避免将系统内所有可用插件的全量描述硬塞入上下文，极大地节省了 Token 消耗，同时有效防止了主模型因上下文过长而产生幻觉。
-  - **自定义原生插件扩展**：提供 `custom_tools` 文件夹，支持用户直接编写原生 Python 脚本（如计算器、查天气等）供大模型原生调用，支持异步执行并直接返回结果。
-  - **插件描述覆写机制**：自动生成 `custom_plugin_info.json`，支持用户为系统内已有的 NoneBot 插件自定义大模型触发描述与用法规范，大幅提升模型调用的准确率。
+- **极省Token的工具调用架构（Function Calling）**：预分类-后注入两阶段设计，仅在需要时将对应Tool Schema注入主模型；支持编写原生Python工具（`custom_tools/`）；支持覆写NoneBot插件描述（`custom_plugin_info.json`）
 
 ## 📦 安装
 
@@ -111,249 +71,34 @@
 | :----------------: | :--: | :----: | :------------------------------------------------------------------------------------: |
 |     SUPERUSERS     |  是  |   无   |                    超级用户，NoneBot自带配置项，本插件要求此项必填                     |
 |      NICKNAME      |  是  |   无   |                   机器人昵称，NoneBot自带配置项，本插件要求此项必填                    |
-| LOCALSTORE_USE_CWD |  否  |   无   | 是否使用当前工作目录作为本地存储目录，如果为True，则会将本地存储目录设置为当前工作目录 |
-|   COMMAND_START    |  否  |   /    |                           命令前缀。一些指令需要前缀才能识别                           |
+| LOCALSTORE_USE_CWD |  否  |   无   | 是否使用当前工作目录作为本地存储目录 |
+|   COMMAND_START    |  否  |   /    |                           命令前缀                           |
 
 例：
 
 ```.env
-SUPERUSERS=["your qq"]  # 配置 NoneBot 超级用户
-NICKNAME=["bot","机器人"]  # 配置机器人的昵称
-# localstore 配置
-LOCALSTORE_USE_CWD=True # 可选
-# 配置命令前缀
-COMMAND_START=["/",""]  # 可选
+SUPERUSERS=["your qq"]
+NICKNAME=["bot","机器人"]
+LOCALSTORE_USE_CWD=True  # 可选
+COMMAND_START=["/",""]   # 可选
 ```
 
 ### 本插件主要配置
 
-由于文件较多，所以统一放在 `nonebot_plugin_localstore.get_plugin_config_dir()` 目录，具体参照[NoneBot Plugin LocalStore](https://github.com/nonebot/plugin-localstore)。<br>
-配置文件在首次运行时自动生成，可以先运行一下，再停止后手动修改。<br>
-**注意**：若是手动复制，因为json不能有注释，所以复制后记得删除注释以及末尾逗号。
+配置文件统一放在 `nonebot_plugin_localstore.get_plugin_config_dir()` 目录（参照 [NoneBot Plugin LocalStore](https://github.com/nonebot/plugin-localstore)），**首次运行时自动生成**。
 
-#### 基础配置 `config.json`(手动维护)<br>
+| 文件 | 维护方式 | 说明 | 修改后是否需重启 |
+| :--: | :------: | ---- | :--------------: |
+| `providers.toml` | 手动 | **核心**：服务商/API密钥/模型参数，支持四级参数继承 | 否（`刷新模型`指令） |
+| `config.json` | 手动 | 基础行为（历史长度、冷却、表情包等） | 是 |
+| `model_config.json` | 指令/手动 | MoE调度、视觉/工具开关，支持指令实时切换 | 指令实时；手动需重启 |
+| `temperaments.json` | 手动 | 性格预设的system prompt | 是 |
+| `custom_plugin_info.json` | 手动 | 覆写NoneBot插件描述以提升LLM调用精准度 | 是 |
+| `custom_tools/` | 手动 | 原生Python函数，供LLM直接调用 | 否（`刷新工具`指令） |
 
-📌修改后需要重启。Tavily搜索: [获取API Key](https://tavily.com/)。
+**[→ 完整配置参考（含所有字段说明与示例）请见 Wiki](docs/configuration.md)**
 
-```json5
-{
-  max_group_history: 10, // 群组上下文最大长度
-  max_user_history: 8, // 每个用户上下文最大长度
-  max_retry_times: 3, // 最大重试次数
-  max_tool_rounds: 3, // 单轮对话中，最大工具调用次数
-  user_history_expire_seconds: 600, // 用户上下文过期时间
-  cd_seconds: 0, // 每个用户冷却时间（秒）
-  search_api: "Bearer your_tavily_key", //联网搜索tavily api key。开启搜索必填，且开启MoE才能使用
-  fastai_enabled: false, // 快速AI助手开关。方便快速调用纯AI助手，无角色扮演。调用快速AI助手时，仅有用户上下文，不会有群聊上下文。不会分段发送也不会发送表情包。调用方法下文提到。
-  emotions_enabled: false, // 是否开启表情包
-  emotion_rate: 0.1, // 发送表情包概率（0-1）（触发时，会在system prompt中注入发送表情包提示）
-  emotions_dir: "absolute path", // 表情包目录，绝对路径
-  private_chat_enabled: false, // 是否开启超级管理员私聊
-  show_datetime: false, // 是否在System Prompt中注入当前时间
-}
-```
-
-**表情包目录结构示例**:
-
-```plaintext
-your_absolute_path/
-├── smile/
-│   ├── smile1.jpg
-│   ├── smile2.png
-│   └── smile3.jpg
-├── 滑稽/
-│   ├── huaji001.png
-│   ├── huaji002.jpg
-│   └── huaji003.png
-└── 阴险/
-    ├── yinxian_a.jpg
-    ├── yinxian_b.png
-    └── yinxian_c.jpg
-```
-
-> **说明**: 每个文件夹为表情包名字（中英皆可），用于LLM识别，每张图片名字任意。系统自动读取文件夹名字，不需要手动在prompt中添加说明。
-
-#### 服务商配置 `providers.toml`(推荐/自动生成)
-
-📌 **核心配置**。首次运行后自动生成模板。程序会自动补全 API 路径和 Bearer 鉴权头，并会在启动时**自动抓取**可用模型列表。支持全局代理与模型参数的精细化覆写。
-
-```toml
-# AI服务商配置文件
-# base_url: 基础API地址（直接写Base URL即可，程序会自动补全 /chat/completions 及 /models）
-# api_key: 你的API密钥（无需手动写 Bearer ，程序会自动补全）。支持填入单个字符串，或字符串列表实现随机轮询，如 ["sk-key1", "sk-key2"]
-# proxy: [可选] 该服务商的全局代理
-# models: [可选] 手动补充的模型列表。若API不支持 /models 自动获取，或获取不全时可在这里手动指定作为补充。
-
-# 【全局默认配置】（所有供应商的所有模型均默认继承此设置，垫底优先级）
-[global_default]
-stream = true
-is_segment = true
-max_segments = 5
-
-[providers.deepseek]
-base_url = "https://api.deepseek.com"
-api_key = "sk-xxxxxx"
-models = ["deepseek-chat", "deepseek-reasoner"]
-
-[providers.openai]
-base_url = "https://api.openai.com/v1"
-api_key = "sk-xxxxxx"
-proxy = "http://127.0.0.1:7890"
-
-# ====================================================
-# 【高级参数配置】支持四级继承：全局默认 < 供应商默认 < 分组配置 < 独立配置
-# 以下参数设置将自动合并到模型最终的配置字典中
-# ====================================================
-
-# 【用法一：供应商默认配置】（覆盖 global_default）
-# 该供应商下*所有*拉取到或手动填写的模型，均默认应用此配置
-[providers.openai.default_config]
-temperature = 1.0
-
-# 【用法二：批量分组配置】（覆盖前两项）
-# 将需要相同配置的模型名称放入 models 数组，统一应用参数
-[[providers.openai.config_groups]]
-models = ["gpt-4o", "gpt-4-turbo"]
-temperature = 1.2
-
-# 【用法三：单模型独立配置】（最高优先级，覆盖一切）
-[providers.openai.model_configs."o1-preview"]
-stream = false  # 不支持流式的模型单独关闭
-json_mode = true  # <-- 可在此自定义json结构化输出配置，以方便分类模型使用。聊天模型不影响
-
-# 【no_tools】：标记该模型不支持工具调用格式（适用于 MoE 中混入了不支持 Function Calling 的廉价模型）
-# 设置后，该模型本次请求不会注入 tool schema，历史记录中的工具消息也会自动转为普通文本传入
-[providers.some-provider.model_configs."some-cheap-model"]
-no_tools = true
-```
-
-#### 系统动态缓存 model_cache.json(系统维护)
-
-📌 自动维护，无需手动修改。存储系统从 providers.toml 中各 API 提供商自动拉取到的最新可用模型列表，避免每次启动或对话时重复请求。可通过 刷新模型 指令实时更新此缓存。
-
-#### 模型管理 models.json(向下兼容/遗留)
-
-📌 不推荐新用户使用。用于兼容旧版本手动编写的复杂模型配置。系统启动时会将此文件中的模型与 providers.toml 获取的模型进行合并。
-
-```json5
-{
-  "dpsk-chat": {
-    "url": "https://api.deepseek.com/chat/completions",
-    "key": "Bearer xxx",
-    "model": "deepseek-chat",
-    "temperature": 1.5,
-    "max_tokens": 1024,
-    "stream": True, // 是否流式响应
-    "is_segment": True, // 是否开启分段发送（只有stream为true才会生效）
-    "max_segments": 5, // 分段发送最大段数（开启分段发送后，为了防止刷屏，设置发送上限，超过后会直接停止发送）
-  },
-  "dpsk-r1": {
-    "url": "https://api.deepseek.com/chat/completions",
-    "key": "Bearer xxxx",
-    "model": "deepseek-reasoner",
-    "stream": false,
-    "top_k": 5,
-    "top_p": 1.0
-  },
-  "gpt-4o": {
-    "url": "https://api.openai.com/v1/chat/completions",
-    "key": "Bearer sk-xxx",
-    "model": "gpt-4o",
-    "proxy": "http://127.0.0.1:7890",
-    "is_vision": true, // 开启多模态识图能力（仅当模型支持视觉时开启）
-    "stream": true
-  }
-}
-```
-
-#### 智能调度配置 `model_config.json`(指令维护)<br>
-
-📌 默认不开启moe和网络搜索，支持QQ指令实时切换；若手动修改，重启生效。<br>
-**模型名字必须为 `models.json` 中的键值。**
-
-```json5
-{
-  use_moe: false, // 启用混合专家模式。若开启联网搜索，则需开启此项
-  moe_models: {
-    // 问题难度分级模型映射
-    "0": "dpsk-chat", // 简单问题
-    "1": "dpsk-chat", // 中等问题
-    "2": "dpsk-r1", // 复杂问题
-  },
-  vision_model: "gpt-4o", // ⚠️v0.17.0新增：视觉任务专用模型。当分类器判定需要“看图”时，将忽略难度分级，强制使用此模型。若未配置则回退到普通模型
-  selected_model: "dpsk-r1", // 不启用MoE时的模型。最好填写上，在难度分级失败时也会回滚至此模型
-  category_model: "glm-4-flash", // 问题分类模型（建议用免费或较小的模型）
-  use_web_search: false, // 启用网络搜索（use_moe 为 true 时才生效）
-  use_tools: true, // ⚠️v0.18.0新增（非第一次安装则请手动填写或者用命令设置此项）：启用函数调用（Tools），允许LLM触发系统内的其他Bot插件
-  tool_blacklist: ["nonebot_plugin_orm", "..."], // ⚠️v0.18.0新增（非第一次安装则请手动填写或者用命令设置此项）：禁止LLM调用的系统级/危险插件黑名单
-  resident_plugins: [], // 常驻插件。无视分类模型，注入插件。方便常用插件使用，且避免分类模型不给插件的情况
-}
-```
-
-#### 插件自定义描述 `custom_plugin_info.json`(手动维护)<br>
-
-📌 首次运行后自动生成模板。用于覆盖或补充已有 NoneBot 插件提供给大模型的描述，让大模型更精准地知道何时该调用什么插件。
-
-```json5
-{
-  _comment: "键名必须是你想修改的 nonebot 插件的真实包名（比如 nonebot_plugin_whatis）",
-  nonebot_plugin_whatis: {
-    name: "百科搜索与群词条记忆",
-    description: "提供百度百科检索、自定义词条的记忆与遗忘功能。当用户要求查询客观名词解释、要求记住特定设定时调用。",
-    usage: "必须生成以下指令格式：\n1. 记录词条: `记住 [A] 是 [B]`\n2. 问答查询: `[词汇]是什么?`",
-  },
-}
-```
-
-#### 原生自定义函数目录 custom_tools/(手动维护)
-
-📌 首次运行后自动生成该文件夹及示例模板 `config/custom_tools/example.py`。
-
-- 支持在文件夹内编写任意 .py 脚本，无需模拟 Nonebot 消息事件，直接由大模型作为原生函数 (Function Calling) 调用。
-- 编写完成后，使用指令 `刷新工具` 即可热重载生效，非常适合编写轻量级的爬虫、计算器、系统状态查询等原生扩展工具。
-
-**极简编写示例**：
-
-```python
-from typing import Annotated
-# 【依赖拓扑声明】
-# 键为“触发条件”，值为“需要一并注入的工具列表”
-# 表示：当大模型被分配了 get_weather 工具时，强制将本脚本中的 extract_webpage 工具也提供给它。
-TOOL_DEPENDENCIES = {
-    "get_weather": ["extract_webpage"]
-}
-
-async def get_weather(
-    city: Annotated[str, "需要查询天气的城市名称，如：北京市、上海市"]
-) -> str:
-    """
-    获取指定城市的实时天气情况。当用户询问天气时调用此工具。
-    """
-    return f"{city}今天天气晴朗，气温25度。"
-```
-
-#### 性格设定 `temperaments.json` (手动维护)<br>
-
-📌 不用写“你在群组”等设定，系统自动补全 | 修改后需重启生效
-
-```json5
-{
-  默认: "你是ai助手。回答像真人且尽量简短，回复格式为@id content", //性格默认值，可以不填，但是最好填上，没设置过性格的群友默认调用该性格
-  ai助手: "你是ai助手。回复格式为@id content", // ai助手，若开启快速调用纯ai助手，则需要填写
-  艾拉: "你是《可塑性记忆》中的角色“艾拉”，不怎么表现出感情的少女型Giftia。性格傲娇，当听到不想听的话语时，会说：'ERROR，没听清楚'。回答尽量简短",
-}
-```
-
-#### 用户性格设定 `temperament_config.json` (指令维护)<br>
-
-📌 全自动生成和命令配置，无需手动复制或修改 | 若手动修改，需重启生效
-
-```json
-{
-  "用户1的qq号": "ai助手",
-  "用户2的qq号": "默认"
-}
-```
+其他Wiki页面：[自定义工具开发](docs/custom-tools.md) · [插件集成](docs/plugin-integration.md) · [性格系统](docs/personality.md)
 
 ## 🎮 使用
 
@@ -422,7 +167,6 @@ flowchart TD
     A[用户提问] --> B{冷却/队列检测}
     B -->|通过| C[分类模型 Categorizer]
 
-    %% 将复杂的连线说明提取为独立的判定节点，彻底规避边标签过大的问题
     C --> C_Cond(一次性综合判定：<br>筛选所需插件 + 视觉需求 + 难度级别)
     C_Cond --> D[只组装所需工具信息<br>并动态路由至最优模型]
 
@@ -439,29 +183,13 @@ flowchart TD
 
 **核心机制说明**
 
-1. 智能冷却系统
+1. **智能冷却系统**：每个用户拥有独立冷却计时器（`cd_seconds`配置）；冷却期间的新消息进入队列，冷却结束自动处理
 
-   - 独立计时：每个用户拥有独立冷却计时器（通过cd_seconds配置）
+2. **容错重试机制**：网络错误时自动触发阶梯式重试（间隔：2s → 4s → 8s）
 
-   - 队列管理：冷却期间的新消息进入队列，冷却结束自动处理
+3. **混合调度流程**：预检阶段执行冷却状态检测；并行分析「问题复杂度」与「实时信息需求」；简单问题直连轻量模型，复杂问题调用专家模型
 
-2. 容错重试机制
-
-   - 多级重试：网络错误时自动触发阶梯式重试（间隔：2s → 4s → 8s）
-
-3. 混合调度流程
-
-   - 预检阶段：优先执行冷却状态检测和队列管理
-
-   - 双评估层：并行分析「问题复杂度」与「实时信息需求」
-
-   - 分级路由：简单问题直连轻量模型（响应速度提升40%），复杂问题调用专家模型（准确度提升60%）
-
-4. Token消耗降低
-
-   - 动态 Schema 注入：摒弃了传统的“全量工具挂载”方案。主模型日常聊天时绝不携带冗长的工具说明，仅在触发特定任务时按需加载对应插件的 Schema，实现 Token 的极致利用。
-
-   - 大幅降低API调用失败率，Token浪费显著减少，同时保障高并发场景下的系统稳定性。
+4. **Token消耗降低**：动态Schema注入，日常聊天不携带工具说明，仅在触发特定任务时按需加载对应插件的Schema
 
 ## 更新日志
 
