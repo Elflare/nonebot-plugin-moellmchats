@@ -1,3 +1,4 @@
+import re
 import ujson as json
 from json import JSONDecodeError
 from nonebot.log import logger
@@ -95,7 +96,9 @@ class Categorize:
                         
                 if choices := response.get("choices"):
                     raw_result = choices[0]["message"]["content"]
-                    
+                    # 清理思考内容（推理模型可能包含 <think>/<thought> 标签）
+                    raw_result = re.sub(r"<(think|thought|thinking)>.*?</\1>", "", raw_result, flags=re.DOTALL).strip()
+
                     # 容错清理 Markdown 标记
                     clean_result = raw_result.strip()
                     if clean_result.startswith("```json"):

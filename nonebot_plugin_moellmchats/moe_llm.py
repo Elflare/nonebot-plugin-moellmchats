@@ -43,6 +43,7 @@ class MoeLlm:
         self.emotion_flag = False  # 判断本次对话是否发送表情包
         self.prompt = temperament_manager.get_temperament_prompt(temperament)
         self.dynamic_context = ""
+        self._pending_vision_images: list = []  # 本轮工具调用返回的待处理图片
 
     def prompt_handler(self):
         """处理动态上下文（时间、状态、群聊记录、工具记忆）"""
@@ -417,9 +418,12 @@ class MoeLlm:
             if not call.get("function", {}).get("arguments") or not str(call["function"]["arguments"]).strip():
                 call["function"]["arguments"] = "{}"
 
+        content_for_history = str(result_text) if result_text else ""
+        if self.emotion_flag and content_for_history:
+            content_for_history, _ = parse_emotion(content_for_history)
         assistant_msg = {
             "role": "assistant",
-            "content": str(result_text) if result_text and str(result_text).strip() else "（正在调用工具）",
+            "content": content_for_history.strip() or "（正在调用工具）",
             "tool_calls": tool_calls,
         }
         send_message_list.append(assistant_msg)
@@ -473,7 +477,16 @@ class MoeLlm:
                 else:
                     await self.bot.send(self.event, f"正在执行指令: {func_name}...")
                 command = args.get("command", "")
-                tool_result = await event_simulator.dispatch_event(self.bot, self.event, command)
+                plugin_text, plugin_images = await event_simulator.dispatch_event(self.bot, self.event, command)
+                _PLUGIN_SYSTEM_HINT = "\n\n[系统提示]：上述结果已对用户可见。注意：若执行不正确或者用户的原始请求需要多个步骤，请务重试或者继续调用下一个工具！如果所有任务均已完成，请直接做一两句话的简短总结，严禁重复上述已发送的结果。"
+                if plugin_images:
+                    self._pending_vision_images.extend(plugin_images)
+                    text_part = f"插件执行返回结果：\n{plugin_text}" if plugin_text else "插件执行完毕并返回了图片（见下方图片消息）"
+                    tool_result = text_part + _PLUGIN_SYSTEM_HINT
+                elif plugin_text:
+                    tool_result = f"插件执行返回结果：\n{plugin_text}{_PLUGIN_SYSTEM_HINT}"
+                else:
+                    tool_result = "插件已执行，但未返回有效文本。[系统提示]：如果有后续操作，请继续调用下一个工具。"
 
             send_message_list.append(
                 {
@@ -519,18 +532,11 @@ class MoeLlm:
         self.prompt_handler()
         supports_tools = model_selector.get_use_tools() and not self.model_info.get("no_tools", False)
         send_message_list = self.messages_handler.get_send_message_list(supports_tools=supports_tools)
-        # 1. 将完全静态的 System Prompt 插入头部，确保命中前缀缓存
-        send_message_list.insert(0, {"role": "system", "content": self.prompt})
-        # 2. 如果存在动态上下文，作为一条独立的 system 消息插入到最后一条 user 消息之前
+        # 将动态上下文追加到系统提示末尾，避免部分模型不支持多条 system 消息
+        system_content = self.prompt
         if self.dynamic_context:
-            # 提取最后一条用户消息
-            last_user_msg = send_message_list.pop()
-
-            # 插入动态系统消息
-            send_message_list.append({"role": "system", "content": f"系统环境：\n{self.dynamic_context}"})
-
-            # 把用户消息放回最后
-            send_message_list.append(last_user_msg)
+            system_content += f"\n\n系统环境：\n{self.dynamic_context}"
+        send_message_list.insert(0, {"role": "system", "content": system_content})
         # 2. 构建 Payload
         data, current_stream_flag = self._build_payload(send_message_list)
 
@@ -613,6 +619,28 @@ class MoeLlm:
             # 3. 执行工具调用（非总结轮次才执行）
             if tool_calls and tool_round < max_tool_rounds:
                 send_message_list = await self._execute_tools(tool_calls, result_text, send_message_list)
+
+                # 若插件返回了图片，自动切换至视觉模型并注入图片消息
+                if self._pending_vision_images:
+                    vision_model_info = model_selector.get_model("vision_model")
+                    if vision_model_info:
+                        logger.info(f"插件返回图片，自动切换至视觉模型: {vision_model_info['model']}")
+                        self.model_info = vision_model_info
+                        data["model"] = vision_model_info["model"]
+                        headers["Authorization"] = vision_model_info["key"]
+                        if vision_model_info.get("no_tools"):
+                            data.pop("tools", None)
+                            current_stream_flag = vision_model_info.get("stream", False)
+                            data["stream"] = current_stream_flag
+                        # 以 user 消息注入图片，视觉模型在下一轮可直接看到
+                        image_content = [{"type": "text", "text": "插件返回了以下图片，请结合上下文进行分析："}]
+                        for url in self._pending_vision_images:
+                            image_content.append({"type": "image_url", "image_url": {"url": url}})
+                        send_message_list.append({"role": "user", "content": image_content})
+                    else:
+                        logger.warning("插件返回了图片，但未配置视觉模型，无法自动切换")
+                    self._pending_vision_images = []
+
                 data["messages"] = send_message_list
                 continue
 
