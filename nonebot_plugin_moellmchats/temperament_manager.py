@@ -32,7 +32,7 @@ class TemperamentManager:
         return json.dumps(self.temperaments, indent=4, ensure_ascii=False)
 
     def get_temperament_prompt(self, temperament: str) -> str:
-        """根据性格获取提示语"""
+        """根据性格获取提示词"""
         return self.temperaments.get(temperament, "你是ai助手。回答像真人且简短")
 
     def set_temperament_dict(self, qq, temperament) -> bool:
@@ -42,7 +42,7 @@ class TemperamentManager:
         return self.write_temperament(qq, temperament)
 
     # 读取文件
-    def read_temperament(self) -> str:
+    def read_temperament(self) -> dict:
         if not self.temperament_config.exists():
             self.temperament_config.parent.mkdir(parents=True, exist_ok=True)
             self.temperament_config.touch()
@@ -57,20 +57,23 @@ class TemperamentManager:
             return {}
 
     # 读取文件
-    def read_temperaments(self) -> str:
+    def read_temperaments(self) -> dict:
         prompt = "你是ai助手。回答像真人且简短"
+        default_temperaments = {"默认": prompt}
         if not self.temperaments_path.exists():
             self.temperaments_path.parent.mkdir(parents=True, exist_ok=True)
             self.temperaments_path.touch()
             with open(self.temperaments_path, "w", encoding="utf-8") as f:
-                json.dump({"默认": prompt}, f, ensure_ascii=False, indent=4)
-            return prompt
+                json.dump(default_temperaments, f, ensure_ascii=False, indent=4)
+            return default_temperaments
         try:
             with open(self.temperaments_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
         except Exception:
             logger.error(format_exc())
-            return prompt
+        return default_temperaments
 
     # 性格写入文件
     def write_temperament(self, qq: int, temperament: str) -> bool:

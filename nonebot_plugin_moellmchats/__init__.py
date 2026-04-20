@@ -66,7 +66,7 @@ async def context_dict_func(bot: Bot, event: MessageEvent):
         if message_dict := await format_message(event, bot):
             sender_name = event.sender.card or event.sender.nickname
             llm.context_dict[event.group_id].append(
-                f"{sender_name}:{''.join(message_dict['text'])}"
+                f"[{sender_name}] {''.join(message_dict['text'])}"
             )
         # 概率主动发
         # if random.randint(1, 100) == 1:

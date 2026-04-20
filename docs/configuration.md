@@ -72,12 +72,13 @@ your_absolute_path/
 ### 基本结构
 
 ```toml
-# base_url: 直接写 Base URL，程序自动补全 /chat/completions 和 /models
-# api_key: 无需写 Bearer，程序自动补全。支持单字符串或列表实现随机轮询
+# base_url: 基础API地址（直接写Base URL即可，程序会自动补全 /chat/completions 及 /models）
+# api_key: 你的API密钥（无需手动写 Bearer ，程序会自动补全）。支持填入单个字符串，或字符串列表实现随机轮询，如 ["sk-key1", "sk-key2"]
 # proxy: [可选] 该服务商的全局代理
-# models: [可选] 手动补充的模型列表（API 不支持或获取不全时使用）
-
-# 全局默认（最低优先级，所有模型默认继承）
+# models: [可选] 手动补充的模型列表。若API不支持 /models 自动获取，或获取不全时可在这里手动指定作为补充。
+# extra_payload: [可选] 字典格式。用于透传厂商特有参数（如 Gemini 的 thinking_config ）。
+#                该字典下的内容会直接合并到发送给 API 的请求根 JSON 中。
+# 【全局默认配置】（所有供应商的所有模型均默认继承此设置，垫底优先级）
 [global_default]
 stream = true
 is_segment = true
@@ -86,7 +87,7 @@ max_segments = 5
 [providers.deepseek]
 base_url = "https://api.deepseek.com"
 api_key = "sk-xxxxxx"
-models = ["deepseek-chat", "deepseek-reasoner"]  # 手动补充
+models = ["deepseek-chat", "deepseek-reasoner"]
 
 [providers.openai]
 base_url = "https://api.openai.com/v1"

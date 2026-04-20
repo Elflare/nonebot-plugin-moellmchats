@@ -12,7 +12,8 @@ from typing import get_type_hints, get_origin, get_args, Annotated
 import aiohttp
 
 Bot_NICKNAME: str = list(nonebot.get_driver().config.nickname)[0]  # bot的nickname
-
+# 表情包名字缓存
+_emotions_cache = None
 
 # hello之类的回复
 hello__reply = [
@@ -48,21 +49,45 @@ poke__reply = [
 ]
 
 
-# 表情包解析
+
 def parse_emotion(text: str) -> tuple:
-    # 使用正则表达式匹配方括号内的内容
+    """
+    解析并剥离文本中的有效表情包，保留非表情包的中括号内容。
+    """
+    # 1. 获取当前系统真实存在的表情包名称列表
+    valid_emotions = get_emotions_names()
+    extracted_emotions = []
+
+    # 2. 定义替换回调函数
+    def replacer(match):
+        name = match.group(1)
+        # 校验：如果括号内的名字在图库中存在
+        if name in valid_emotions:
+            extracted_emotions.append(name)
+            return ""  # 确认为表情包，从原文本中剥离（替换为空）
+        
+        # 校验失败：说明是普通中括号文本（如 [图片]），原样保留返回
+        return match.group(0)
+
+    # 3. 执行正则替换
     pattern = r"\[(.*?)\]"
-    # 提取所有表情包名字
-    names = re.findall(pattern, text)
-    # 替换所有匹配项为[表情包名字]
-    replaced_text = re.sub(pattern, "", text)
-    return replaced_text, names
+    replaced_text = re.sub(pattern, replacer, text)
+    
+    return replaced_text, extracted_emotions
 
 
 # 获取表情包名字列表
 def get_emotions_names() -> list:
-    emotions_names = listdir(config_parser.get_config("emotions_dir"))
-    return emotions_names
+    global _emotions_cache
+    if _emotions_cache is None:
+        try:
+            # 初次调用时读取磁盘并缓存
+            _emotions_cache = listdir(config_parser.get_config("emotions_dir"))
+        except OSError:
+            logger.warning(f"读取表情包目录失败:\n{format_exc()}")
+            _emotions_cache = []
+            
+    return _emotions_cache
 
 
 # 获取具体表情包
