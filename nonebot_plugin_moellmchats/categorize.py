@@ -1,6 +1,5 @@
 import re
 import ujson as json
-from json import JSONDecodeError
 from nonebot.log import logger
 import traceback
 import aiohttp

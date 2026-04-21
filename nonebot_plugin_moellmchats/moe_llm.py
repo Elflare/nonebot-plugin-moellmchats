@@ -77,15 +77,15 @@ class MoeLlm:
                     dynamic_context_parts.append("\n".join(context_dict_))
             else:
                 dynamic_context_parts.append(
-                        f"Environment: Private Chat.{emotion_prompt}"
-                    )
+                    f"Environment: Private Chat.{emotion_prompt}"
+                )
         # 注入时间
         if config_parser.get_config("show_datetime"):
             now = datetime.datetime.now()
             time_str = now.strftime("%Y-%m-%d %H:%M:%S")
             dynamic_context_parts.append(f"Time: {time_str}")
         # 注入用户 ID
-        dynamic_context_parts.append(f"User: {user_id}")
+        dynamic_context_parts.append(f"current user: {user_id}")
         dynamic_context_parts.append("</meta_info>\n")
         self.dynamic_context = "\n".join(dynamic_context_parts)
 
@@ -95,7 +95,9 @@ class MoeLlm:
         completion_tokens = usage.get("completion_tokens", 0)
         total_tokens = usage.get("total_tokens", 0)
         prompt_tokens_details = usage.get("prompt_tokens_details") or {}
-        cache_hit = prompt_tokens_details.get("cached_tokens", 0) or usage.get("prompt_cache_hit_tokens", 0)
+        cache_hit = prompt_tokens_details.get("cached_tokens", 0) or usage.get(
+            "prompt_cache_hit_tokens", 0
+        )
         token_usage_history.appendleft(
             {
                 "time": datetime.datetime.now().strftime("%m-%d %H:%M:%S"),
@@ -386,6 +388,8 @@ class MoeLlm:
     async def _prepare_model_info(self, plain: str):
         """预处理：获取模型信息、处理难度分类与视觉判断"""
         self.required_plugins = []
+        # 1. 绝对的客观事实：只要真实提取到了图片URL，就必定触发视觉处理，不再完全依赖大模型分类判断
+        has_image = bool(self.messages_handler.current_images)
         if (
             model_selector.get_moe()
             or model_selector.get_web_search()
@@ -401,8 +405,9 @@ class MoeLlm:
                     f"难度：{difficulty}, 视觉：{vision_required}, 需要插件：{required_plugins}"
                 )
                 self.required_plugins = required_plugins
+                has_image = has_image or vision_required
                 # 无论是否开启MoE，只要触发视觉且有图片，优先走视觉模型
-                if vision_required and self.messages_handler.current_images:
+                if has_image:
                     vision_model_key = model_selector.model_config.get("vision_model")
                     if vision_model_key:
                         self.model_info = model_selector.get_model("vision_model")
@@ -426,6 +431,31 @@ class MoeLlm:
             self.model_info = model_selector.get_model("selected_model")
         logger.info(f"模型选择为：{self.model_info['model']}")
         return None
+
+    def _build_tool_mention_hint(self) -> str:
+        """仅在本轮工具调用时，为模型补充 @ 占位符规则。"""
+        mentions = self.format_message_dict.get("mentions") or []
+        reply_user = self.format_message_dict.get("reply_user") or {}
+
+        parts = []
+
+        if mentions:
+            mention_desc = "，".join(
+                f"#{i+1} {m.get('name', '未知用户')}" for i, m in enumerate(mentions)
+            )
+            parts.append(f"当前消息额外提到的人：{mention_desc}。")
+
+        if reply_user and reply_user.get("name"):
+            parts.append(f"当前回复对象：{reply_user['name']}。")
+
+        if not parts:
+            return ""
+
+        parts.append(
+            "工具指令里若需提及当前消息中的人，勿写QQ号或者id，用中括号和数字占位。如：[at:1]、[at:2] ...。回复对象用 [reply_user]。"
+        )
+
+        return "".join(parts)
 
     def _build_payload(self, send_message_list: list) -> tuple[dict, bool]:
         """构建发给大模型的 payload 与工具 schema"""
@@ -492,9 +522,18 @@ class MoeLlm:
 
         if tools_schema:
             data["tools"] = tools_schema
+
+            mention_hint = self._build_tool_mention_hint()
+
             send_message_list[0]["content"] += (
-                "。特别注意：1. 同步执行：如果你需要调用工具，必须在本次回复的文本(content)中用简短的一句话说明你要做什么，并**在同一次回复中立刻发起工具调用(tool_calls)**！2. 如果用户的请求包含多个步骤逻辑，你必须在获取到前置工具的结果后，**自动且连续地调用下一个工具**，直至彻底完成要求。3.工具执行结束后，原始数据将被清理。因此你最终呈现给用户的回复content中，**必须完整包含查询到的核心数据和关键结论**，这将作为你下一轮对话的记忆依据！"
+                "。特别注意：1. 同步执行：如果你需要调用工具，必须在本次回复的文本(content)中用简短的一句话说明你要做什么，并**在同一次回复中立刻发起工具调用(tool_calls)**！"
+                "2. 如果用户的请求包含多个步骤逻辑，你必须在获取到前置工具的结果后，**自动且连续地调用下一个工具**，直至彻底完成要求。"
+                "3. 工具执行结束后，原始数据将被清理。因此你最终呈现给用户的回复content中，**必须完整包含查询到的核心数据和关键结论**，这将作为你下一轮对话的记忆依据！"
             )
+
+            if mention_hint:
+                send_message_list[0]["content"] += " 4. " + mention_hint
+
             current_stream_flag = False
             logger.debug("检测到需要调用工具，已自动将本次请求切换为非流式")
             logger.debug(f"实际发送给大模型的 tools_schema: {tools_schema}")
@@ -502,6 +541,81 @@ class MoeLlm:
         if current_stream_flag:
             data["stream_options"] = {"include_usage": True}
         return data, current_stream_flag
+
+    def _render_history_placeholders(self, text: str) -> str:
+        """把本轮临时 @ 占位符转成可读文本，避免污染后续上下文。"""
+        if not text:
+            return text
+
+        mentions = self.format_message_dict.get("mentions") or []
+        reply_user = self.format_message_dict.get("reply_user") or {}
+
+        def repl(match):
+            token = match.group(0)
+
+            if token.startswith("[at:"):
+                try:
+                    idx = int(match.group(1)) - 1
+                    if 0 <= idx < len(mentions):
+                        name = mentions[idx].get("name") or mentions[idx].get("qq") or f"目标{idx+1}"
+                        return f"@{name}"
+                except Exception:
+                    pass
+                return "@提及对象"
+
+            if token == "[reply_user]":
+                name = reply_user.get("name") or reply_user.get("qq")
+                return f"@{name}" if name else "@回复对象"
+
+            if token == "[at_all]":
+                return "@当前消息中提到的所有人"
+
+            return token
+
+        return re.sub(r"\[at:(\d+)\]|\[reply_user\]|\[at_all\]", repl, text)
+
+
+    def _sanitize_tool_calls_for_history(self, tool_calls: list) -> list:
+        """仅清洗 tool_calls 里的临时占位符，保留其余有意义参数。"""
+        sanitized = []
+
+        for call in tool_calls:
+            new_call = {
+                "id": call.get("id"),
+                "type": call.get("type", "function"),
+                "function": {
+                    "name": call.get("function", {}).get("name", ""),
+                    "arguments": call.get("function", {}).get("arguments", "{}"),
+                },
+            }
+
+            raw_args_str = new_call["function"]["arguments"]
+
+            try:
+                raw_args = json.loads(raw_args_str)
+            except Exception:
+                # 不是合法 JSON，就直接在原字符串层面替换占位符
+                new_call["function"]["arguments"] = self._render_history_placeholders(raw_args_str)
+                sanitized.append(new_call)
+                continue
+
+            def walk(v):
+                if isinstance(v, str):
+                    return self._render_history_placeholders(v)
+                if isinstance(v, list):
+                    return [walk(x) for x in v]
+                if isinstance(v, dict):
+                    return {k: walk(val) for k, val in v.items()}
+                return v
+
+            cleaned_args = walk(raw_args)
+            new_call["function"]["arguments"] = json.dumps(
+                cleaned_args,
+                ensure_ascii=False,
+            )
+            sanitized.append(new_call)
+
+        return sanitized
 
     async def _execute_tools(
         self, tool_calls: list, result_text: str, send_message_list: list
@@ -519,14 +633,14 @@ class MoeLlm:
             content_for_history, _ = parse_emotion(content_for_history)
         # 提取本次调用的所有工具名称
         called_func_names = [
-            call.get("function", {}).get("name", "未知插件") 
-            for call in tool_calls
+            call.get("function", {}).get("name", "未知插件") for call in tool_calls
         ]
         func_names_str = ", ".join(called_func_names)
-        
+
         assistant_msg = {
             "role": "assistant",
-            "content": content_for_history.strip() or f"（正在调用工具: {func_names_str}）",
+            "content": content_for_history.strip()
+            or f"（正在调用工具: {func_names_str}）",
             "tool_calls": tool_calls,
         }
         send_message_list.append(assistant_msg)
@@ -585,7 +699,10 @@ class MoeLlm:
                     await self.bot.send(self.event, f"正在执行指令: {func_name}...")
                 command = args.get("command", "")
                 plugin_text, plugin_images = await event_simulator.dispatch_event(
-                    self.bot, self.event, command
+                    self.bot,
+                    self.event,
+                    command,
+                    self.format_message_dict,
                 )
                 _PLUGIN_SYSTEM_HINT = "\n\n[系统提示]：上述结果已对用户可见。注意：若执行不正确或者用户的原始请求需要多个步骤，请务重试或者继续调用下一个工具！如果所有任务均已完成，请直接做一两句话的简短总结，严禁重复上述已发送的结果。"
                 if plugin_images:
@@ -613,11 +730,13 @@ class MoeLlm:
 
         # 将本 round 的工具消息（截断结果）追加到历史记录 entity，供下轮对话使用
         HISTORY_TOOL_RESULT_LIMIT = 300
+        history_tool_calls = self._sanitize_tool_calls_for_history(tool_calls)
+
         history_msgs = [
             {
                 "role": "assistant",
                 "content": assistant_msg["content"],
-                "tool_calls": tool_calls,
+                "tool_calls": history_tool_calls,
             }
         ]
         for call in tool_calls:

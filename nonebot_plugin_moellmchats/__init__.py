@@ -18,8 +18,7 @@ from nonebot import get_driver
 
 require("nonebot_plugin_localstore")
 from .utils import (
-    hello__reply,
-    poke__reply,
+    get_reply_messages,
     format_message,
     init_session,
     close_session,
@@ -33,6 +32,7 @@ from .config import config_parser
 from .tool_manager import tool_manager
 from .messages_handler import messages_dict
 from .moe_llm import token_usage_history
+
 __plugin_meta__ = PluginMetadata(
     name="MoEllm聊天",
     description="感谢llm，机器人变聪明了\n✨ 混合专家模型调度LLM插件 | 混合调度·联网搜索·上下文优化·个性定制·Token节约·更加拟人 ✨",
@@ -281,7 +281,7 @@ async def _(bot: Bot, event: MessageEvent):
         format_message_dict = await format_message(event, bot)
     else:
         await llm_matcher.finish(
-            Message(random.choice(hello__reply))
+            Message(random.choice(get_reply_messages("hello")))
         )  # 没有就选一个卖萌回复
     await handle_llm(bot, event, llm_matcher, format_message_dict, is_ai=False)
 
@@ -301,7 +301,7 @@ if config_parser.get_config("fastai_enabled"):
             await handle_llm(bot, event, ai_matcher, format_message_dict, is_ai=True)
         else:
             await ai_matcher.finish(
-                Message(random.choice(hello__reply))
+                Message(random.choice(get_reply_messages("hello")))
             )  # 没有就选一个卖萌回复
 
 
@@ -547,7 +547,7 @@ async def _(event: MessageEvent, args: Message = CommandArg()):
 
 check_resident_matcher = on_command(
     "常驻插件",
-    aliases={"查看常驻插件", "查看常驻函数","查看常驻工具"},
+    aliases={"查看常驻插件", "查看常驻函数", "查看常驻工具"},
     permission=SUPERUSER,
     priority=10,
     block=True,
@@ -586,33 +586,39 @@ async def _(event: MessageEvent, args: Message = CommandArg()):
         await check_token_matcher.finish("当前暂无 Token 消耗记录。")
     history_list = list(token_usage_history)
     total_records = len(history_list)
-    
+
     # 默认查询参数
     start_idx = 0
     end_idx = min(5, total_records)
-    
+
     if arg:
-        if arg.startswith('-') and arg[1:].isdigit():
+        if arg.startswith("-") and arg[1:].isdigit():
             # 逻辑 1：处理 "-N"（最远的 N 条记录）
             n = int(arg[1:])
             if n <= 0:
-                 await check_token_matcher.finish("范围错误，负数后面需要跟大于 0 的数字哦。")
+                await check_token_matcher.finish(
+                    "范围错误，负数后面需要跟大于 0 的数字哦。"
+                )
             n = min(n, total_records)
             start_idx = total_records - n
             end_idx = total_records
-            
-        elif '-' in arg:
+
+        elif "-" in arg:
             # 逻辑 2：处理 "X-Y" 范围
-            parts = arg.split('-')
+            parts = arg.split("-")
             if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
                 x, y = int(parts[0]), int(parts[1])
                 if x > y or x <= 0:
-                    await check_token_matcher.finish("范围格式错误，请确保 X <= Y 且 X > 0，例如: 10-15")
+                    await check_token_matcher.finish(
+                        "范围格式错误，请确保 X <= Y 且 X > 0，例如: 10-15"
+                    )
                 start_idx = x - 1
                 end_idx = min(y, total_records)
             else:
-                await check_token_matcher.finish("参数格式错误！支持的格式: 5、10-15、-10")
-                
+                await check_token_matcher.finish(
+                    "参数格式错误！支持的格式: 5、10-15、-10"
+                )
+
         elif arg.isdigit():
             # 逻辑 3：处理 "N"（最近的 N 条记录）
             n = int(arg)
@@ -620,35 +626,42 @@ async def _(event: MessageEvent, args: Message = CommandArg()):
                 await check_token_matcher.finish("查询次数必须大于 0 哦~")
             start_idx = 0
             end_idx = min(n, total_records)
-            
+
         else:
-            await check_token_matcher.finish("无法识别的参数！支持的格式: 5、10-15、-10")
+            await check_token_matcher.finish(
+                "无法识别的参数！支持的格式: 5、10-15、-10"
+            )
 
     # 边界检查
     if start_idx >= total_records:
-        await check_token_matcher.finish(f"超出范围啦！当前总共只有 {total_records} 条记录哦。")
+        await check_token_matcher.finish(
+            f"超出范围啦！当前总共只有 {total_records} 条记录哦。"
+        )
 
     # 切片提取所需数据
     display_list = history_list[start_idx:end_idx]
-    
+
     # 动态生成标题
-    if arg.startswith('-'):
+    if arg.startswith("-"):
         title = f"📊 最远的 {len(display_list)} 次 API 调用消耗："
-    elif '-' in arg:
+    elif "-" in arg:
         title = f"📊 第 {start_idx + 1} 到 {end_idx} 次 API 调用消耗："
     else:
         title = f"📊 最近 {len(display_list)} 次 API 调用消耗："
 
     msg = title + "\n"
-    
+
     # enumerate 传入 start_idx + 1，保证序号和实际位置一致
     for idx, record in enumerate(display_list, start_idx + 1):
         msg += f"[{idx}] {record['time']} | {record['model']}\n"
-        msg += f" ├ 提示词: {record['prompt']} (其中命中缓存: {record.get('cache', 0)})\n"
+        msg += (
+            f" ├ 提示词: {record['prompt']} (其中命中缓存: {record.get('cache', 0)})\n"
+        )
         msg += f" ├ 生成:   {record['completion']}\n"
         msg += f" └ 总计:   {record['total']}\n"
-        
+
     await check_token_matcher.finish(msg.strip())
+
 
 # 优先级10，不会向下阻断，条件：戳一戳bot触发
 poke_ = on_notice(rule=to_me(), priority=11, block=False)
@@ -657,7 +670,7 @@ poke_ = on_notice(rule=to_me(), priority=11, block=False)
 @poke_.handle()
 async def _poke_event(event: PokeNotifyEvent):
     if event.is_tome:
-        await poke_.send(Message(random.choice(poke__reply)))
+        await poke_.send(Message(random.choice(get_reply_messages("poke"))))
         # try:
         #     await poke_.send(Message(f"[CQ:group_poke,qq={event.user_id}]"))
         # except ActionFailed:

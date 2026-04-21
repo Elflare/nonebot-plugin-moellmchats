@@ -1,6 +1,6 @@
 import nonebot
 from nonebot.log import logger
-from .config import config_parser
+from .config import config_parser, config_path
 from random import choice
 from pathlib import Path
 from os import listdir
@@ -10,32 +10,45 @@ import re
 import inspect
 from typing import get_type_hints, get_origin, get_args, Annotated
 import aiohttp
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
 
 Bot_NICKNAME: str = list(nonebot.get_driver().config.nickname)[0]  # bot的nickname
 # 表情包名字缓存
 _emotions_cache = None
 
-# hello之类的回复
-hello__reply = [
+
+# 戳和hello消息
+def get_reply_messages(reply_type: str) -> list:
+    """获取回复消息，reply_type 可选 'hello' 或 'poke'"""
+    reply_file_path = config_path / "replies.toml"
+    
+    # 如果文件不存在，则自动创建并写入默认文案
+    if not reply_file_path.exists():
+        default_toml_content = """# 机器人回复文案配置
+# 可在文案中使用 {bot_name} 作为机器人昵称的占位符
+
+hello = [
     "你好喵~",
     "呜喵..？！",
     "你好OvO",
-    f"喵呜 ~ ，叫{Bot_NICKNAME}做什么呢☆",
+    "喵呜 ~ ，叫{bot_name}做什么呢☆",
     "怎么啦qwq",
     "呜喵 ~ ，干嘛喵？",
-    "呼喵 ~ 叫可爱的咱有什么事嘛OvO",
+    "呼喵 ~ 叫可爱的咱有什么事嘛OvO"
 ]
 
-# 戳一戳消息
-poke__reply = [
+poke = [
     "嗯？",
     "戳我干嘛qwq",
     "呜喵？",
     "喵！",
     "呜...不要用力戳咱...好疼>_<",
-    f"请不要戳{Bot_NICKNAME} >_<",
+    "请不要戳{bot_name} >_<",
     "放手啦，不给戳QAQ",
-    f"喵 ~ ！ 戳{Bot_NICKNAME}干嘛喵！",
+    "喵 ~ ！ 戳{bot_name}干嘛喵！",
     "戳坏了，你赔！",
     "呜......戳坏了",
     "呜呜......不要乱戳",
@@ -45,9 +58,34 @@ poke__reply = [
     "呜喵！......不许戳 (,,• ₃ •,,)",
     "有什么吩咐喵？",
     "啊呜 ~ ",
-    "呼喵 ~ 叫可爱的咱有什么事嘛OvO",
+    "呼喵 ~ 叫可爱的咱有什么事嘛OvO"
 ]
+"""
+        try:
+            with open(reply_file_path, "w", encoding="utf-8") as f:
+                f.write(default_toml_content)
+        except Exception as e:
+            logger.warning(f"创建 replies.toml 失败: {e}")
+            
+        # 写入失败或创建默认值后，直接使用兜底字典
+        replies_dict = {
+            "hello": ["你好喵~", "呜喵..？！", "你好OvO", "喵呜 ~ ，叫{bot_name}做什么呢☆", "怎么啦qwq", "呜喵 ~ ，干嘛喵？", "呼喵 ~ 叫可爱的咱有什么事嘛OvO"],
+            "poke": ["嗯？", "戳我干嘛qwq", "呜喵？", "喵！", "呜...不要用力戳咱...好疼>_<", "请不要戳{bot_name} >_<", "放手啦，不给戳QAQ", "喵 ~ ！ 戳{bot_name}干嘛喵！", "戳坏了，你赔！", "呜......戳坏了", "呜呜......不要乱戳", "喵喵喵？OvO", "(。´・ω・)ん?", "怎么了喵？", "呜喵！......不许戳 (,,• ₃ •,,)", "有什么吩咐喵？", "啊呜 ~ ", "呼喵 ~ 叫可爱的咱有什么事嘛OvO"]
+        }
+    else:
+        # 文件存在则读取，tomllib 需要用 "rb" 模式
+        try:
+            with open(reply_file_path, "rb") as f:
+                replies_dict = tomllib.load(f)
+        except Exception as e:
+            logger.warning(f"读取 replies.toml 失败: {e}")
+            replies_dict = {"hello": ["你好喵~"], "poke": ["嗯？"]}  # 兜底回复
 
+    # 获取对应类型的列表
+    replies = replies_dict.get(reply_type, ["喵？"])
+
+    # 动态将 {bot_name} 占位符替换为真实的机器人昵称
+    return [reply.replace("{bot_name}", Bot_NICKNAME) for reply in replies]
 
 
 def parse_emotion(text: str) -> tuple:
@@ -65,14 +103,14 @@ def parse_emotion(text: str) -> tuple:
         if name in valid_emotions:
             extracted_emotions.append(name)
             return ""  # 确认为表情包，从原文本中剥离（替换为空）
-        
+
         # 校验失败：说明是普通中括号文本（如 [图片]），原样保留返回
         return match.group(0)
 
     # 3. 执行正则替换
     pattern = r"\[(.*?)\]"
     replaced_text = re.sub(pattern, replacer, text)
-    
+
     return replaced_text, extracted_emotions
 
 
@@ -86,7 +124,7 @@ def get_emotions_names() -> list:
         except OSError:
             logger.warning(f"读取表情包目录失败:\n{format_exc()}")
             _emotions_cache = []
-            
+
     return _emotions_cache
 
 
@@ -110,38 +148,42 @@ def get_emotion(emoji_name: str) -> MessageSegment:
 async def format_message(event, bot) -> dict:
     text_message = []
     reply_text = ""
-    image_urls = []  # 新增：用于存储提取到的图片URL
+    image_urls = []
+    mentions = []
+    reply_user = None
 
-    # 1. 处理回复消息中的图片 (使用你提供的逻辑)
-    if reply := event.reply:
-        # 手动遍历回复内容，保留 [图片] 占位符
+    # 1. 处理回复消息
+    if reply := getattr(event, "reply", None):
         reply_segments = []
         for seg in event.reply.message:
             if seg.type == "text":
                 reply_segments.append(seg.data.get("text", ""))
             elif seg.type == "image":
                 reply_segments.append("[图片]")
-            # 可以在这里加 elif seg.type == "face": 处理表情等其他类型
+            elif seg.type == "at":
+                reply_segments.append("[提及]")
         reply_text = "".join(reply_segments).strip()
+        reply_user = {
+            "qq": str(getattr(reply.sender, "user_id", "")),
+            "name": reply.sender.card or reply.sender.nickname,
+        }
         text_message.append(
-            f"[回复 {event.reply.sender.card or event.reply.sender.nickname} 的消息 [{reply_text}]]"
+            f"> {reply_user['name']}：{reply_text}\n"
         )
 
         try:
-            # 获取原消息详情以提取图片
             quoted_message = await bot.get_msg(message_id=reply.message_id)
             message_list = quoted_message["message"]
-            if isinstance(message_list, str):  # gocq是str
+            if isinstance(message_list, str):
                 message_image = Message(message_list)
-                # 查找是否有图片段
                 for seg in message_image:
                     if seg.type == "image":
                         if url := seg.data.get("url"):
                             image_urls.append(url)
-            else:  # shamrock是list
+            else:
                 for message in message_list:
                     if message.get("type") == "image":
-                        if url := message.get("data").get("url"):
+                        if url := message.get("data", {}).get("url"):
                             image_urls.append(url)
         except Exception:
             logger.warning("获取回复消息图片失败")
@@ -149,13 +191,13 @@ async def format_message(event, bot) -> dict:
     # 2. 处理当前消息
     for msgseg in event.get_message():
         if msgseg.type == "at":
-            qq = msgseg.data.get("qq")
-            if qq != nonebot.get_bot().self_id:
+            qq = str(msgseg.data.get("qq"))
+            if qq != str(nonebot.get_bot().self_id):
                 name = await get_member_name(event.group_id, qq, bot)
+                mentions.append({"qq": qq, "name": name})
                 text_message.append(name)
         elif msgseg.type == "image":
             text_message.append("[图片]")
-            # 新增：提取当前消息的图片URL
             if url := msgseg.data.get("url"):
                 image_urls.append(url)
         elif msgseg.type == "face":
@@ -167,8 +209,13 @@ async def format_message(event, bot) -> dict:
                 else:
                     text_message.append(plain)
 
-    # 返回字典中增加 images 字段
-    return {"text": text_message, "reply": reply_text, "images": image_urls}
+    return {
+        "text": text_message,
+        "reply": reply_text,
+        "images": image_urls,
+        "mentions": mentions,
+        "reply_user": reply_user,
+    }
 
 
 async def get_member_name(group: int, sender_id: int, bot) -> str:  # 将QQ号转换成昵称
@@ -191,17 +238,17 @@ def build_schema_from_func(func) -> dict:
     tool_name = func.__name__
     # 直接使用整段 docstring 作为工具描述，无需正则解析
     tool_desc = inspect.getdoc(func) or "未提供功能描述"
-    
+
     sig = inspect.signature(func)
     try:
         # 必须加 include_extras=True 才能保留 Annotated 里的元数据
         type_hints = get_type_hints(func, include_extras=True)
     except Exception:
         type_hints = {}
-        
+
     properties = {}
     required = []
-    
+
     # Python 类型映射到 JSON Schema 类型
     type_map = {
         str: "string",
@@ -209,17 +256,17 @@ def build_schema_from_func(func) -> dict:
         float: "number",
         bool: "boolean",
         list: "array",
-        dict: "object"
+        dict: "object",
     }
-    
+
     for param_name, param in sig.parameters.items():
-        if param_name in ('self', 'cls') or param_name.startswith('_'):
+        if param_name in ("self", "cls") or param_name.startswith("_"):
             continue
-            
+
         hint = type_hints.get(param_name, str)
         param_desc = f"参数 {param_name}"
         param_type = str
-        
+
         # 解析 Annotated[Type, "描述"]
         if get_origin(hint) is Annotated:
             args = get_args(hint)
@@ -234,25 +281,22 @@ def build_schema_from_func(func) -> dict:
 
         # 映射类型，若不在 type_map 中则默认 fallback 到 "string"
         json_type = type_map.get(param_type, "string")
-        
-        properties[param_name] = {
-            "type": json_type,
-            "description": param_desc
-        }
-        
+
+        properties[param_name] = {"type": json_type, "description": param_desc}
+
         # 没有默认值即为必填参数
         if param.default == inspect.Parameter.empty:
             required.append(param_name)
-            
+
     return {
         "name": tool_name,
         "description": tool_desc,
         "parameters": {
             "type": "object",
             "properties": properties,
-            "required": required
+            "required": required,
         },
-        "func": func
+        "func": func,
     }
 
 
