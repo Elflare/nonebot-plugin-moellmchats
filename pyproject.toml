@@ -11,21 +11,23 @@ documentation = "https://github.com/Elflare/nonebot-plugin-moellmchats#readme"
 keywords = ["nonebot", "nonebot2", "llm", "ai", "chat"]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.10"
 aiohttp = "^3.8.1"
 nonebot2 = "^2.2.0"
 nonebot-adapter-onebot = "^2.0.0"
-ujson = "^5.7.0"
+ujson = ">=5.12.0,<6.0.0"
 nonebot-plugin-localstore = "^0.7.0"
+python-dotenv = ">=1.2.2,<2.0.0"
 tomli = { version = "^2.0.1", python = "<3.11" }
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.8.0"
 nonemoji = "^0.1.2"
 pre-commit = "^4.0.0"
+filelock = ">=3.20.3,<4.0.0"
 
 [tool.ruff]
 line-length = 130
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.format]
 line-ending = "lf"
@@ -63,7 +65,7 @@ force-sort-within-sections = true
 keep-runtime-typing = true
 
 [tool.pyright]
-pythonVersion = "3.9"
+pythonVersion = "3.10"
 pythonPlatform = "All"
 defineConstant = { PYDANTIC_V2 = true }
 executionEnvironments = [{ root = "./" }]
