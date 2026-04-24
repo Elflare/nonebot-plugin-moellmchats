@@ -65,8 +65,14 @@ async def context_dict_func(bot: Bot, event: MessageEvent):
     if event.message.extract_plain_text().strip():  # 有文字才记录
         if message_dict := await format_message(event, bot):
             sender_name = event.sender.card or event.sender.nickname
+            message_text = "".join(message_dict["text"])
+            reply_text = (message_dict.get("reply") or "").strip()
+            reply_user = message_dict.get("reply_user") or {}
+            if reply_text and reply_user:
+                reply_name = reply_user.get("name") or reply_user.get("qq") or "被引用者"
+                message_text = f"[引用消息: {reply_name}说「{reply_text}」] {message_text}"
             llm.context_dict[event.group_id].append(
-                f"[{sender_name}] {''.join(message_dict['text'])}"
+                f"[{sender_name}] {message_text}"
             )
         # 概率主动发
         # if random.randint(1, 100) == 1:

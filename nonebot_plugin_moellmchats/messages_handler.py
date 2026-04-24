@@ -65,6 +65,10 @@ class MessagesHandler:
     def pre_process(self, format_message_dict: dict) -> str:
         # 提取图片列表
         self.current_images = format_message_dict.get("images", [])
+        reply_text = (format_message_dict.get("reply") or "").strip()
+        reply_user = format_message_dict.get("reply_user") or {}
+        current_user = format_message_dict.get("current_user") or {}
+        quote_is_previous_assistant = False
         if self.messages_entity_list:  # 之前有对话
             # 超过时间一对对话的删了
             expire_seconds = config_parser.get_config("user_history_expire_seconds")
@@ -72,17 +76,28 @@ class MessagesHandler:
                 time.time() - self.messages_entity_list[0].timestamp > expire_seconds
             ):
                 self.messages_entity_list.popleft()
+            last_assistant = (
+                self.messages_entity_list[-1].get_assistant_msg()
+                if self.messages_entity_list
+                else None
+            )
             if (
-                self.messages_entity_list  # 还有对话
-                and format_message_dict["reply"]  # 有回复
-                and format_message_dict["reply"].strip()
-                == self.messages_entity_list[-1]
-                .get_assistant_msg()["content"]
-                .strip()  # 如果引用的就是上一条回复
+                last_assistant
+                and reply_text
+                and reply_text == (last_assistant.get("content") or "").strip()
             ):
-                format_message_dict["text"].pop(0)
+                quote_is_previous_assistant = True
 
         plain = "".join(format_message_dict["text"])
+        if reply_text and reply_user and not quote_is_previous_assistant:
+            reply_name = reply_user.get("name") or reply_user.get("qq") or "被引用者"
+            current_name = (
+                current_user.get("name") or current_user.get("qq") or "当前用户"
+            )
+            plain = (
+                f"[引用消息: {reply_name}说「{reply_text}」；"
+                f"当前提问者是{current_name}，请回复当前提问者]\n{plain}"
+            )
         self.new_user_msg = {"role": "user", "content": plain}  # 最新的问题
         self.messages_entity.add_user_msg(
             self.new_user_msg

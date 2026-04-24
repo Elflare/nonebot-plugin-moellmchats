@@ -86,6 +86,11 @@ class MoeLlm:
             dynamic_context_parts.append(f"Time: {time_str}")
         # 注入用户 ID
         dynamic_context_parts.append(f"current user: {user_id}")
+        if self.format_message_dict.get("reply_user"):
+            dynamic_context_parts.append(
+                "When a message contains 引用消息, answer 当前提问者, "
+                "not the quoted speaker, unless the user explicitly asks to reply to the quoted speaker."
+            )
         dynamic_context_parts.append("</meta_info>\n")
         self.dynamic_context = "\n".join(dynamic_context_parts)
 
@@ -446,14 +451,22 @@ class MoeLlm:
             parts.append(f"当前消息额外提到的人：{mention_desc}。")
 
         if reply_user and reply_user.get("name"):
-            parts.append(f"当前回复对象：{reply_user['name']}。")
+            parts.append(f"当前用户引用的群友：{reply_user['name']}，占位符为[at:0]。")
 
         if not parts:
             return ""
 
-        parts.append(
-            "工具指令里若需提及当前消息中的人，勿写QQ号或者id，用中括号和数字占位。如：[at:1]、[at:2] ...。回复对象用 [reply_user]。"
-        )
+        if reply_user and reply_user.get("name"):
+            parts.append(
+                "工具指令里若需提及当前消息中的人，勿写QQ号或者id，用中括号和数字占位。"
+                "用户引用的群友为[at:0]，当前消息里有 @ 的人时从 [at:1]、[at:2] ... 开始。"
+                "仅当用户明确要求回复、@或转告被引用群友时才使用[at:0]；不要把[at:0]当作当前提问者。"
+            )
+        else:
+            parts.append(
+                "工具指令里若需提及当前消息中的人，勿写QQ号或者id，用中括号和数字占位。"
+                "当前消息里有 @ 的人时从 [at:1]、[at:2] ... 开始。"
+            )
 
         return "".join(parts)
 
@@ -555,24 +568,29 @@ class MoeLlm:
 
             if token.startswith("[at:"):
                 try:
-                    idx = int(match.group(1)) - 1
-                    if 0 <= idx < len(mentions):
-                        name = mentions[idx].get("name") or mentions[idx].get("qq") or f"目标{idx+1}"
+                    idx = int(match.group(1))
+                    if idx == 0:
+                        name = reply_user.get("name") or reply_user.get("qq")
+                        return f"@{name}" if name else "@回复对象"
+
+                    mention_idx = idx - 1
+                    if 0 <= mention_idx < len(mentions):
+                        name = (
+                            mentions[mention_idx].get("name")
+                            or mentions[mention_idx].get("qq")
+                            or f"目标{idx}"
+                        )
                         return f"@{name}"
                 except Exception:
                     pass
                 return "@提及对象"
-
-            if token == "[reply_user]":
-                name = reply_user.get("name") or reply_user.get("qq")
-                return f"@{name}" if name else "@回复对象"
 
             if token == "[at_all]":
                 return "@当前消息中提到的所有人"
 
             return token
 
-        return re.sub(r"\[at:(\d+)\]|\[reply_user\]|\[at_all\]", repl, text)
+        return re.sub(r"\[at:(\d+)\]|\[at_all\]", repl, text)
 
 
     def _sanitize_tool_calls_for_history(self, tool_calls: list) -> list:

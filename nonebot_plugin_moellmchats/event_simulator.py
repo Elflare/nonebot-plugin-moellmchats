@@ -19,9 +19,7 @@ import random
 # key -> {"messages": [], "original_id": int/str, "fake_id": int/str}
 _intercepted_messages: dict[str, dict] = {}
 
-_current_capture_key: ContextVar[str | None] = ContextVar(
-    "_current_capture_key", default=None
-)
+_current_capture_key: ContextVar[str | None] = ContextVar("_current_capture_key", default=None)
 
 # 防止热重载时重复 patch
 if not hasattr(Bot, "_event_simulator_original_call_api"):
@@ -31,7 +29,7 @@ _original_call_api = Bot._event_simulator_original_call_api
 
 _SEND_ACTIONS = {"send_msg", "send_group_msg", "send_private_msg"}
 
-_AT_PATTERN = re.compile(r"\[(at:(\d+)|reply_user|at_all)\]")
+_AT_PATTERN = re.compile(r"\[(at:(\d+)|at_all)\]")
 
 
 def _rewrite_reply_id(message, original_id: int | str, fake_id: int | str) -> Message:
@@ -104,21 +102,22 @@ def _build_fake_message(command_str: str, format_message_dict: dict | None = Non
 
     for m in _AT_PATTERN.finditer(command_str):
         if m.start() > last:
-            fake_message.append(MessageSegment.text(command_str[last:m.start()]))
+            fake_message.append(MessageSegment.text(command_str[last : m.start()]))
 
         token = m.group(1)
 
         if token.startswith("at:"):
-            idx = int(m.group(2)) - 1
-            if 0 <= idx < len(mentions):
-                qq = mentions[idx].get("qq")
+            idx = int(m.group(2))
+            if idx == 0:
+                qq = reply_user.get("qq")
                 if qq:
                     fake_message.append(MessageSegment.at(int(qq)))
-
-        elif token == "reply_user":
-            qq = reply_user.get("qq")
-            if qq:
-                fake_message.append(MessageSegment.at(int(qq)))
+            else:
+                mention_idx = idx - 1
+                if 0 <= mention_idx < len(mentions):
+                    qq = mentions[mention_idx].get("qq")
+                    if qq:
+                        fake_message.append(MessageSegment.at(int(qq)))
 
         elif token == "at_all":
             for item in mentions:

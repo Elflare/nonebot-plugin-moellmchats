@@ -151,6 +151,13 @@ async def format_message(event, bot) -> dict:
     image_urls = []
     mentions = []
     reply_user = None
+    sender = event.sender
+    current_user = {
+        "qq": str(getattr(sender, "user_id", getattr(event, "user_id", ""))),
+        "name": getattr(sender, "card", None)
+        or getattr(sender, "nickname", None)
+        or str(getattr(sender, "user_id", getattr(event, "user_id", ""))),
+    }
 
     # 1. 处理回复消息
     if reply := getattr(event, "reply", None):
@@ -167,9 +174,6 @@ async def format_message(event, bot) -> dict:
             "qq": str(getattr(reply.sender, "user_id", "")),
             "name": reply.sender.card or reply.sender.nickname,
         }
-        text_message.append(
-            f"> {reply_user['name']}：{reply_text}\n"
-        )
 
         try:
             quoted_message = await bot.get_msg(message_id=reply.message_id)
@@ -215,6 +219,7 @@ async def format_message(event, bot) -> dict:
         "images": image_urls,
         "mentions": mentions,
         "reply_user": reply_user,
+        "current_user": current_user,
     }
 
 
