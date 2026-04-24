@@ -191,14 +191,14 @@ class MoeLlm:
 
     async def stream_llm_chat(
         self, session, url, headers, data, proxy, is_segment=False, timeout=None
-    ) -> tuple[bool, str, list]:
+    ) -> tuple[bool, str, list, str]:
         # 流式响应内容
         buffer = []
         assistant_result = []  # 后处理助手回复
         punctuation_buffer = ""  # 存标点
         is_second_send = False  # 不是第一次发送
         current_content = ""  # 最近一次已发出的分段内容
-
+        reasoning_buffer = []  # 思考内容
         is_thinking = False  # 状态机：是否在思考中
         tag_buffer = ""  # 用于精准匹配标签切片
 
@@ -237,10 +237,16 @@ class MoeLlm:
                     choices = json_data.get("choices", [{}])
                     if not choices:  # 防止choices为空列表的情况
                         continue
+                    reasoning_delta = ""
                     if message := json_data.get("choices", [{}])[0].get("message", {}):
                         content = message.get("content", "")
+                        reasoning_delta = message.get("reasoning_content", "")
                     elif message := json_data.get("choices", [{}])[0].get("delta", {}):
                         content = message.get("content", "")
+                        reasoning_delta = message.get("reasoning_content", "")
+
+                    if reasoning_delta:
+                        reasoning_buffer.append(reasoning_delta)
 
                     if content:
                         for char in content:
@@ -331,9 +337,19 @@ class MoeLlm:
 
                 if result := result.strip():
                     result = await self.send_emotion_message(result)
-                    return True, "".join(assistant_result) + result, None
+                    return (
+                        True,
+                        "".join(assistant_result) + result,
+                        None,
+                        "".join(reasoning_buffer),
+                    )
                 elif is_second_send:
-                    return True, "".join(assistant_result), None
+                    return (
+                        True,
+                        "".join(assistant_result),
+                        None,
+                        "".join(reasoning_buffer),
+                    )
             else:
                 error_text = await resp.text()
                 logger.warning(f"API返回非200状态码 {resp.status}: {error_text}")
@@ -343,17 +359,17 @@ class MoeLlm:
                     error_reply += (
                         f"\n原因：{detail[:150]}{'...' if len(detail) > 150 else ''}"
                     )
-                return False, error_reply, None
-        return False, "API请求异常", None
+                return False, error_reply, None, ""
+        return False, "API请求异常", None, ""
 
     async def none_stream_llm_chat(
         self, session, url, headers, data, proxy, timeout=None
-    ) -> tuple[bool, str, list]:
+    ) -> tuple[bool, str, list, str]:
         async with session.post(
             url=url, json=data, headers=headers, proxy=proxy, timeout=timeout
         ) as resp:
             if error_msg := await self._check_400_error(resp, request_data=data):
-                return False, error_msg, None
+                return False, error_msg, None, ""
             if resp.status != 200:
                 error_text = await resp.text()
                 logger.warning(f"API返回非200状态码 {resp.status}: {error_text}")
@@ -363,16 +379,18 @@ class MoeLlm:
                     error_reply += (
                         f"\n原因：{detail[:150]}{'...' if len(detail) > 150 else ''}"
                     )
-                return False, error_reply, None
+                return False, error_reply, None, ""
             response = await resp.json()
             if not response:
                 logger.warning("API返回空响应")
-                return False, "API返回异常：响应体为空", None
+                return False, "API返回异常：响应体为空", None, ""
 
         if choices := response.get("choices"):
             if usage := response.get("usage"):
                 self._record_token_usage(usage)
             message = choices[0]["message"]
+            # 获取并返回 reasoning_content
+            reasoning_content = message.get("reasoning_content", "")
             content = message.get("content", "")
             # 清理思考内容
             if content:
@@ -383,12 +401,12 @@ class MoeLlm:
 
             # 清洗完再判断并返回 tool_calls
             if tool_calls := message.get("tool_calls"):
-                return True, content, tool_calls
+                return True, content, tool_calls, reasoning_content
 
-            return True, content, None
+            return True, content, None, reasoning_content
         else:
             logger.warning(response)
-            return False, "API解析异常", None
+            return False, "API解析异常", None, ""
 
     async def _prepare_model_info(self, plain: str):
         """预处理：获取模型信息、处理难度分类与视觉判断"""
@@ -592,7 +610,6 @@ class MoeLlm:
 
         return re.sub(r"\[at:(\d+)\]|\[at_all\]", repl, text)
 
-
     def _sanitize_tool_calls_for_history(self, tool_calls: list) -> list:
         """仅清洗 tool_calls 里的临时占位符，保留其余有意义参数。"""
         sanitized = []
@@ -613,7 +630,9 @@ class MoeLlm:
                 raw_args = json.loads(raw_args_str)
             except Exception:
                 # 不是合法 JSON，就直接在原字符串层面替换占位符
-                new_call["function"]["arguments"] = self._render_history_placeholders(raw_args_str)
+                new_call["function"]["arguments"] = self._render_history_placeholders(
+                    raw_args_str
+                )
                 sanitized.append(new_call)
                 continue
 
@@ -636,7 +655,11 @@ class MoeLlm:
         return sanitized
 
     async def _execute_tools(
-        self, tool_calls: list, result_text: str, send_message_list: list
+        self,
+        tool_calls: list,
+        result_text: str,
+        send_message_list: list,
+        reasoning_content: str,
     ) -> list:
         """执行工具调用，并更新消息列表"""
         for call in tool_calls:
@@ -661,6 +684,9 @@ class MoeLlm:
             or f"（正在调用工具: {func_names_str}）",
             "tool_calls": tool_calls,
         }
+        # 仅在有思维链且非空时附加
+        if reasoning_content:
+            assistant_msg["reasoning_content"] = reasoning_content
         send_message_list.append(assistant_msg)
         text_to_send = result_text  # 暂存大模型回复文本，防止多个插件时被重复发送
         for call in tool_calls:
@@ -846,6 +872,7 @@ class MoeLlm:
                             success,
                             result_text,
                             tool_calls,
+                            reasoning_content,
                         ) = await self.stream_llm_chat(
                             session,
                             self.model_info["url"],
@@ -860,6 +887,7 @@ class MoeLlm:
                             success,
                             result_text,
                             tool_calls,
+                            reasoning_content,
                         ) = await self.none_stream_llm_chat(
                             session,
                             self.model_info["url"],
@@ -883,7 +911,7 @@ class MoeLlm:
             # 3. 执行工具调用（非总结轮次才执行）
             if tool_calls and tool_round < max_tool_rounds:
                 send_message_list = await self._execute_tools(
-                    tool_calls, result_text, send_message_list
+                    tool_calls, result_text, send_message_list, reasoning_content
                 )
 
                 # 若插件返回了图片，自动切换至视觉模型并注入图片消息
