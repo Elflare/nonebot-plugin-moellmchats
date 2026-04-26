@@ -7,6 +7,7 @@ from collections import deque
 from .model_selector import model_selector, config_path
 from .utils import build_schema_from_func
 import inspect
+from .mcp_manager import mcp_manager
 
 
 class ToolManager:
@@ -20,9 +21,9 @@ class ToolManager:
         self.custom_tools_dir = Path(config_path / "custom_tools")
 
         self._init_files()
-        self.load_custom_tools()
-        # 用于全局存储所有自定义工具上报的依赖拓扑
         self.tool_dependencies = {}
+        self.mcp_tool_names = set()
+        self.load_custom_tools()
 
     def _init_files(self):
         """初始化配置文件和文件夹，并生成模板以供用户参考"""
@@ -32,8 +33,11 @@ class ToolManager:
                 "_comment": "键名必须是你想修改的 nonebot 插件的真实包名（比如 nonebot_plugin_tarot）",
                 "nonebot_plugin_example": {
                     "name": "示例插件名称",
-                    "description": "详细描述该插件的功能，告诉大模型在什么场景下应该调用它。例如：用于抽取今天的塔罗牌运势。",
+                    "description": "详细描述该插件的功能，告诉大模型在什么场景下应该调用它。",
                     "usage": "严格写明该插件的触发指令格式。例如：发送'塔罗牌'或'抽牌'",
+                    "dependencies": [
+                        "可选：需要一并注入的工具标识，例如 mcp__danbooru_searcher__search_tags"
+                    ],
                 },
             }
             with open(self.custom_info_file, "w", encoding="utf-8") as f:
@@ -183,6 +187,7 @@ async def extract_webpage(
                 except Exception as e:
                     logger.error(f"加载自定义工具文件 {file.name} 失败: {e}")
                     error_count += 1
+        self._merge_dependencies_from_custom_plugin_info()
         logger.debug(f"最终的工具依赖拓扑: {self.tool_dependencies}")
         logger.debug(f"最终加载的自定义工具: {list(self.custom_tools.keys())}")
         return error_count
@@ -190,44 +195,51 @@ async def extract_webpage(
     def expand_dependencies(self, plugins: set) -> set:
         """
         展开工具依赖关系，确保多步任务所需的伴生工具被一并注入。
+        同时过滤黑名单，避免依赖工具绕过黑名单。
         """
-        expanded = set(plugins)
-        queue = deque(plugins)
+        expanded = {p for p in plugins if not self.is_tool_blacklisted(p)}
+        queue = deque(expanded)
 
         while queue:
             current = queue.popleft()
+
             if current in self.tool_dependencies:
                 for dep in self.tool_dependencies[current]:
+                    if self.is_tool_blacklisted(dep):
+                        logger.debug(f"依赖工具 [{dep}] 已被黑名单禁用，跳过注入")
+                        continue
+
                     if dep not in expanded:
                         logger.debug(
-                            f"尝试注入依赖 [{dep}]。存在性检查 custom_tools: {dep in getattr(self, 'custom_tools', {})}, plugin_info: {dep in getattr(self, 'plugin_info', {})}"
+                            f"尝试注入依赖 [{dep}]。存在性检查 custom_tools: "
+                            f"{dep in getattr(self, 'custom_tools', {})}, "
+                            f"plugin_info: {dep in getattr(self, 'plugin_info', {})}"
                         )
-                        # 确保依赖的工具确实施加在了已加载的工具列表中
+
                         if dep in getattr(self, "custom_tools", {}) or dep in getattr(
                             self, "plugin_info", {}
                         ):
                             expanded.add(dep)
                             queue.append(dep)
-        logger.debug(f"收到初始插件集合: {plugins}")
+
+        logger.debug(f"收到初始插件集合: {plugins}，依赖展开后: {expanded}")
         return expanded
 
     def refresh_plugins(self):
         self.plugin_info.clear()
-        blacklist = model_selector.get_tool_blacklist()
 
         # 读取自定义插件描述
-        custom_info = {}
-        try:
-            with open(self.custom_info_file, "r", encoding="utf-8") as f:
-                custom_info = json.load(f)
-        except Exception as e:
-            logger.error(f"读取自定义插件描述文件失败: {e}")
+        custom_info = self._load_custom_plugin_info()
 
         for plugin in nonebot.plugin.get_loaded_plugins():
-            if plugin.name in blacklist or "saa" in plugin.name:
+            if "saa" in plugin.name:
+                continue
+
+            if self.is_tool_blacklisted(plugin.name):
                 continue
 
             info = None
+
             # 优先使用用户的自定义配置
             if plugin.name in custom_info:
                 info = custom_info[plugin.name]
@@ -242,28 +254,55 @@ async def extract_webpage(
                 self.plugin_info[plugin.name] = info
 
     def get_brief_catalog(self) -> str:
+        """
+        给分类模型看的简版工具目录。
+        注意：这里不要再调用 load_custom_tools()，否则会把已加载的 MCP 工具清掉。
+        工具刷新统一交给 启动流程 / 刷新工具 命令 / 黑名单变更命令。
+        """
         if not self.plugin_info:
             self.refresh_plugins()
-            self.load_custom_tools()  # 确保每次获取目录时自定义工具是最新的
 
         catalog = []
+
         if model_selector.get_use_tools():
-            # 原有的 Nonebot 插件
+            # 1. NoneBot 原生插件
             for name, info in self.plugin_info.items():
-                display_name = info.get("name") or name
+                if self.is_tool_blacklisted(name):
+                    continue
+
+                plugin_name = info.get("name") or name
+                description = info.get("description") or "无描述"
+                usage = info.get("usage") or "无用法说明"
+
                 catalog.append(
-                    f"- 插件标识: {name} | 插件名称: {display_name} | 描述: {info['description']}"
+                    f"- 插件标识: {name} | 插件名称: {plugin_name} | "
+                    f"描述: {description} | 用法: {usage}"
                 )
 
-            # 追加自定义普通函数
+            # 2. 自定义函数 + MCP 工具
             for name, info in self.custom_tools.items():
-                catalog.append(
-                    f"- 插件标识: {name} | 插件名称: 自定义函数 | 描述: {info['description']} (此为原生函数调用)"
+                if self.is_tool_blacklisted(name):
+                    continue
+
+                tool_type = (
+                    "MCP工具"
+                    if name in getattr(self, "mcp_tool_names", set())
+                    else "自定义函数"
                 )
 
-        if model_selector.get_web_search():
+                description = info.get("description") or "无描述"
+
+                catalog.append(
+                    f"- 插件标识: {name} | 插件名称: {tool_type} | 描述: {description}"
+                )
+
+        # 3. 联网搜索
+        if model_selector.get_web_search() and not self.is_tool_blacklisted(
+            "web_search"
+        ):
             catalog.append(
-                "- 插件标识: web_search | 插件名称: 联网搜索 | 描述: 回答实时问题（如时间、新闻、天气等可以使用，进行联网搜索）"
+                "- 插件标识: web_search | 插件名称: 联网搜索 | "
+                "描述: 回答实时问题，如时间、新闻、天气、近期信息等"
             )
 
         return (
@@ -272,9 +311,118 @@ async def extract_webpage(
             else "当前工具调用与联网功能均已关闭，无需返回任何插件。"
         )
 
+    def is_tool_blacklisted(self, tool_name: str) -> bool:
+        """统一判断普通插件、自定义函数、MCP 工具是否被黑名单禁用。"""
+        blacklist = model_selector.get_tool_blacklist() or []
+
+        for item in blacklist:
+            item = str(item).strip()
+            if not item:
+                continue
+
+            # 精确禁用：extract_webpage / nonebot_plugin_xxx / mcp__filesystem__read_file
+            if item == tool_name:
+                return True
+
+            # 通配禁用：mcp__filesystem__*
+            if item.endswith("*") and tool_name.startswith(item[:-1]):
+                return True
+
+            # 服务级禁用：mcp__filesystem 禁用 mcp__filesystem__read_file 等
+            if tool_name.startswith(item + "__"):
+                return True
+
+        return False
+
+    async def load_mcp_tools(self) -> int:
+        """
+        从 mcp_servers.toml 发现 MCP 工具，并合并进 custom_tools。
+        黑名单在这里过滤一次，get_brief_catalog/get_tool_schema 里也会再兜底过滤。
+        """
+        # 清理旧 MCP tools
+        for name in list(getattr(self, "mcp_tool_names", set())):
+            self.custom_tools.pop(name, None)
+
+        self.mcp_tool_names = set()
+
+        mcp_tools = await mcp_manager.discover_tools()
+
+        for name, schema in mcp_tools.items():
+            if self.is_tool_blacklisted(name):
+                continue
+
+            self.custom_tools[name] = schema
+            self.mcp_tool_names.add(name)
+
+        logger.info(f"已加载 MCP 工具: {list(self.mcp_tool_names)}")
+        return len(self.mcp_tool_names)
+
+    def _load_custom_plugin_info(self) -> dict:
+        """读取 custom_plugin_info.json。"""
+        try:
+            with open(self.custom_info_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except Exception as e:
+            logger.error(f"读取自定义插件描述文件失败: {e}")
+            return {}
+
+    def _merge_dependencies_from_custom_plugin_info(self):
+        """
+        从 custom_plugin_info.json 读取 dependencies 字段，并合并进 tool_dependencies。
+
+        示例：
+        {
+          "nonebot_plugin_xxx": {
+            "name": "随机图",
+            "description": "...",
+            "usage": "...",
+            "dependencies": ["mcp__danbooru_searcher__search_tags"]
+          }
+        }
+        """
+        custom_info = self._load_custom_plugin_info()
+
+        for plugin_name, info in custom_info.items():
+            if plugin_name.startswith("_"):
+                continue
+
+            if not isinstance(info, dict):
+                continue
+
+            deps = info.get("dependencies") or info.get("tool_dependencies")
+            if not deps:
+                continue
+
+            if isinstance(deps, str):
+                deps = [deps]
+
+            if not isinstance(deps, list):
+                logger.warning(
+                    f"custom_plugin_info.json 中 {plugin_name}.dependencies 格式错误，应为字符串列表"
+                )
+                continue
+
+            clean_deps = {
+                str(dep).strip() for dep in deps if isinstance(dep, str) and dep.strip()
+            }
+
+            if not clean_deps:
+                continue
+
+            self.tool_dependencies.setdefault(plugin_name, set()).update(clean_deps)
+
+            logger.debug(
+                f"custom_plugin_info.json 注入依赖: {plugin_name} -> {list(clean_deps)}"
+            )
+
     def get_tool_schema(self, plugin_names: list, include_search: bool = False) -> list:
         tools = []
+
         for name in plugin_names:
+            if self.is_tool_blacklisted(name):
+                continue
+
             if name in self.plugin_info:
                 info = self.plugin_info[name]
                 tools.append(
@@ -282,13 +430,20 @@ async def extract_webpage(
                         "type": "function",
                         "function": {
                             "name": name,
-                            "description": f"插件名称：{info.get('name') or name}。功能描述：{info['description']}。原始用法说明：{info['usage']}",
+                            "description": (
+                                f"插件名称：{info.get('name') or name}。"
+                                f"功能描述：{info.get('description') or '无描述'}。"
+                                f"原始用法说明：{info.get('usage') or '无用法说明'}"
+                            ),
                             "parameters": {
                                 "type": "object",
                                 "properties": {
                                     "command": {
                                         "type": "string",
-                                        "description": "严格根据该插件的'原始用法说明'，生成可以直接触发该插件的机器人指令字符串。",
+                                        "description": (
+                                            "严格根据该插件的'原始用法说明'，"
+                                            "生成可以直接触发该插件的机器人指令字符串。"
+                                        ),
                                     }
                                 },
                                 "required": ["command"],
@@ -296,7 +451,7 @@ async def extract_webpage(
                         },
                     }
                 )
-            # 处理被选中的自定义函数
+
             elif name in self.custom_tools:
                 info = self.custom_tools[name]
                 tools.append(
@@ -304,13 +459,17 @@ async def extract_webpage(
                         "type": "function",
                         "function": {
                             "name": name,
-                            "description": info["description"],
-                            "parameters": info["parameters"],
+                            "description": info.get("description") or name,
+                            "parameters": info.get("parameters")
+                            or {
+                                "type": "object",
+                                "properties": {},
+                            },
                         },
                     }
                 )
 
-        if include_search:
+        if include_search and not self.is_tool_blacklisted("web_search"):
             tools.append(
                 {
                     "type": "function",

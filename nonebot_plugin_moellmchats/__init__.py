@@ -15,7 +15,7 @@ from nonebot.adapters.onebot.v11 import (
 )
 import random
 from nonebot import get_driver
-
+from nonebot.log import logger
 require("nonebot_plugin_localstore")
 from .utils import (
     get_reply_messages,
@@ -344,11 +344,17 @@ manage_blacklist_matcher = on_command(
 async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     plugin_name = args.extract_plain_text().strip()
     if not plugin_name:
-        await manage_blacklist_matcher.finish("请提供插件名，如：添加黑名单 xxx")
+        await manage_blacklist_matcher.finish("请提供插件/函数/MCP工具名，如：添加插件黑名单 mcp__filesystem")
+
     command_name = event.message.extract_plain_text().split()[0].strip()
     action = "add" if "添加" in command_name else "remove"
+
     result = model_selector.manage_tool_blacklist(action, plugin_name)
+
     tool_manager.refresh_plugins()
+    tool_manager.load_custom_tools()
+    await tool_manager.load_mcp_tools()
+
     await manage_blacklist_matcher.finish(result)
 
 
@@ -388,10 +394,15 @@ refresh_tools_matcher = on_command(
 @refresh_tools_matcher.handle()
 async def _():
     tool_manager.refresh_plugins()
-    error_count = tool_manager.load_custom_tools()  # 接收错误文件数
+    error_count = tool_manager.load_custom_tools()
+    mcp_count = await tool_manager.load_mcp_tools()
+
+    custom_count = len(tool_manager.custom_tools) - mcp_count
+
     msg = "✨ 工具重载完成！\n"
     msg += f"✅ 已加载 {len(tool_manager.plugin_info)} 个原生插件\n"
-    msg += f"✅ 已加载 {len(tool_manager.custom_tools)} 个自定义函数"
+    msg += f"✅ 已加载 {custom_count} 个自定义函数\n"
+    msg += f"✅ 已加载 {mcp_count} 个 MCP 工具"
 
     if error_count > 0:
         msg += f"\n❌ 有 {error_count} 个自定义文件加载报错，详情请查看后台日志！"
@@ -415,23 +426,24 @@ async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     await category_model_matcher.finish(result)
 
 
-# 初始化全局 HTTP session（需先于 fetch_models 注册，确保先执行）
 @get_driver().on_startup
-async def _init_http_session():
+async def _startup_tasks():
     await init_session()
 
+    # 工具加载可以同步完成，避免刚启动时插件目录为空
+    try:
+        tool_manager.refresh_plugins()
+        tool_manager.load_custom_tools()
+        await tool_manager.load_mcp_tools()
+    except Exception:
+        logger.exception("启动时加载工具失败")
+
+    # 模型拉取保持后台执行，不阻塞 Bot 启动
+    asyncio.create_task(model_selector.fetch_models_from_providers())
 
 @get_driver().on_shutdown
 async def _close_http_session():
     await close_session()
-
-
-# 机器人启动时在后台异步刷新模型缓存，不阻塞 Bot 启动
-@get_driver().on_startup
-async def _auto_fetch_models():
-    asyncio.create_task(model_selector.fetch_models_from_providers())
-
-
 # 超级管理员可手动触发模型刷新
 refresh_models_matcher = on_command(
     "刷新模型", aliases={"刷新模型列表"}, permission=SUPERUSER, priority=10, block=True

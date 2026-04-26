@@ -731,7 +731,44 @@ class MoeLlm:
                         if inspect.iscoroutinefunction(func)
                         else func(**args)
                     )
-                    tool_result = str(res)
+
+                    if isinstance(res, dict):
+                        result_text = (
+                            res.get("text")
+                            or res.get("content")
+                            or res.get("message")
+                            or ""
+                        )
+                        result_images = (
+                            res.get("images")
+                            or res.get("image_urls")
+                            or []
+                        )
+
+                        if isinstance(result_images, str):
+                            result_images = [result_images]
+
+                        result_images = [
+                            img for img in result_images
+                            if isinstance(img, str) and img.strip()
+                        ]
+
+                        if result_images:
+                            self._pending_vision_images.extend(result_images)
+
+                            if result_text:
+                                tool_result = (
+                                    f"函数执行返回结果：\n{result_text}\n\n"
+                                    f"[系统提示]：该函数还返回了 {len(result_images)} 张图片。"
+                                )
+                            else:
+                                tool_result = (
+                                    f"函数执行完毕并返回了 {len(result_images)} 张图片。"
+                                )
+                        else:
+                            tool_result = str(result_text) if result_text else str(res)
+                    else:
+                        tool_result = str(res)
                 except Exception as e:
                     logger.error(traceback.format_exc())
                     tool_result = f"函数执行出错: {str(e)}"

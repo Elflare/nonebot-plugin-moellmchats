@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nonebot-plugin-moellmchats"
-version = "0.20.7"
+version = "0.21.0"
 description = "A Nonebot plugin, Multi-Model Chat System | Hybrid Scheduling·Search Augmented·Persona Customization"
 license = "GPL"
 authors = ["Elflare"]
@@ -19,6 +19,7 @@ ujson = ">=5.12.0,<6.0.0"
 nonebot-plugin-localstore = "^0.7.0"
 python-dotenv = ">=1.2.2,<2.0.0"
 tomli = { version = "^2.0.1", python = "<3.11" }
+mcp = {extras = ["cli"], version = ">=1.24.0"}
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.8.0"
 nonemoji = "^0.1.2"

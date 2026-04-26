@@ -19,7 +19,8 @@
 | `models.json` | 手动（遗留） | 旧版手动模型配置，不推荐新用户使用 | 是 |
 | `temperaments.json` | 手动 | 性格预设 system prompt | 是 |
 | `temperament_config.json` | 指令自动 | 用户↔性格绑定关系 | 指令实时生效 |
-| `custom_plugin_info.json` | 手动 | 覆写插件描述供 LLM 调用 | 是 |
+| `mcp_servers.toml` | 手动 | MCP Server 配置，启用后会作为 Function Calling 工具注入 | 否（用指令`刷新工具`） |
+| `custom_plugin_info.json` | 手动 | 覆写插件描述，并可声明插件依赖工具 | 否（用指令`刷新工具`） |
 | `custom_tools/` | 手动 | 原生 Python 工具函数 | 否（用指令`刷新工具`） |
 
 ---
@@ -150,11 +151,23 @@ api_key = ["sk-key1", "sk-key2", "sk-key3"]  # 随机轮询
   "use_tools": true,          // 是否启用函数调用（允许 LLM 触发其他 Bot 插件）
   "tool_blacklist": [         // 禁止 LLM 调用的插件黑名单
     "nonebot_plugin_orm",
-    "nonebot_plugin_some_dangerous_plugin"
+    "nonebot_plugin_some_dangerous_plugin",
+    "mcp__filesystem",
+    "mcp__filesystem__read_file",
+    "mcp__filesystem__*"
   ],
   "resident_plugins": []      // 常驻插件：无视分类模型，强制每次注入给 LLM
 }
 ```
+`tool_blacklist` 现在同时支持：
+
+- NoneBot 插件包名
+- `custom_tools/` 自定义函数名
+- MCP 工具名
+- MCP 服务级禁用，如 `mcp__filesystem`
+- MCP 通配禁用，如 `mcp__filesystem__*`
+
+`resident_plugins` 也可以填写以上任意工具标识。
 
 ---
 
@@ -225,6 +238,39 @@ poke = [
     "请不要戳{bot_name} >_<",
     "喵 ~ ！ 戳{bot_name}干嘛喵！"
 ]
+```
+
+## `mcp_servers.toml` — MCP Server 配置
+
+📌 首次运行后自动生成模板。修改后使用 `刷新工具` 生效，无需重启。
+
+MCP 工具会被并入现有函数调用系统，统一受 `use_tools`、`tool_blacklist`、`resident_plugins` 控制。
+
+```toml
+[mcp.filesystem]
+enabled = false
+transport = "stdio"
+command = "uvx"
+args = ["mcp-server-filesystem", "/tmp"]
+description = "本地文件系统 MCP"
+cwd = "/path/to/workdir"
+timeout = 30
+discover_timeout = 30
+tool_timeout = 60
+result_limit = 6000
+
+[mcp.filesystem.env]
+SOME_TOKEN = "xxx"
+
+[mcp.myapi]
+enabled = false
+transport = "streamable_http"
+url = "http://127.0.0.1:8000/mcp"
+description = "HTTP MCP 示例"
+# timeout = 30
+# discover_timeout = 30
+# tool_timeout = 60
+# result_limit = 6000
 ```
 
 ---

@@ -2,6 +2,21 @@
 
 本项目的所有显著更改都将记录在此文件中。
 
+## [0.21.0] - 2026-04-26
+
+### Added
+
+- 新增 MCP 工具接入，可通过 `mcp_servers.toml` 配置 MCP Server，并在 `刷新工具` / `重载工具` / `刷新插件` 时自动加载。
+- `custom_plugin_info.json` 新增 `dependencies` 字段，可为 NoneBot 插件声明伴生工具，例如让“随机图”插件先调用 Danbooru tag 搜索 MCP。
+- 自定义函数和 MCP 工具支持返回图片结果，格式为 `{"text": "...", "images": [...]}`，图片会自动交给视觉模型处理。
+
+### Changed
+
+- 工具系统统一管理 NoneBot 插件、自定义函数和 MCP 工具，黑名单、常驻工具、依赖注入均支持三类工具。
+- `刷新工具` 现在会同时刷新 NoneBot 插件描述、`custom_tools/`、`custom_plugin_info.json` 依赖声明和 MCP 工具。
+- `custom_plugin_info.json` 修改后可通过 `刷新工具` 生效，无需重启。
+
+
 ## [0.20.7] - 2026-04-24
 
 - 工具调用中的回复对象占位符由 `[reply_user]` 改为 `[at:0]`，当前消息里额外 `@` 的人从 `[at:1]` 开始编号，减少与 `current user` 的混淆
