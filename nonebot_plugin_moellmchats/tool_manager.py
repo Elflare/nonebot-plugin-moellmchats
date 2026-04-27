@@ -334,6 +334,74 @@ async def extract_webpage(
 
         return False
 
+    def validate_tool_identifier(self, tool_name: str) -> tuple[bool, str]:
+        """
+        校验工具标识是否对应当前可识别的 NoneBot 插件、自定义函数或 MCP。
+
+        支持 MCP 服务级标识：
+        - mcp__server
+        - mcp__server__*
+        """
+        tool_name = str(tool_name or "").strip()
+        if not tool_name:
+            return False, "工具标识不能为空"
+
+        if tool_name == "web_search":
+            return True, "联网搜索工具"
+
+        loaded_plugin_names = {
+            plugin.name for plugin in nonebot.plugin.get_loaded_plugins()
+        }
+        if tool_name in loaded_plugin_names:
+            return True, "NoneBot 插件"
+
+        if tool_name in self.custom_tools:
+            if tool_name in getattr(self, "mcp_tool_names", set()):
+                return True, "MCP 工具"
+            return True, "自定义函数工具"
+
+        if self._is_known_mcp_identifier(tool_name):
+            return True, "MCP 服务"
+
+        return (
+            False,
+            (
+                f"找不到工具标识：{tool_name}\n"
+                "请确认它是已加载的 NoneBot 插件包名、自定义函数名，"
+                "或已配置/已发现的 MCP 标识。可先发送“刷新工具”后重试。\n"
+                "MCP 示例：mcp__filesystem、mcp__filesystem__read_file、mcp__filesystem__*"
+            ),
+        )
+
+    def _is_known_mcp_identifier(self, tool_name: str) -> bool:
+        if not tool_name.startswith("mcp__"):
+            return False
+
+        if tool_name in getattr(self, "mcp_tool_names", set()):
+            return True
+
+        server_token = None
+        if tool_name.endswith("__*"):
+            server_token = tool_name.removeprefix("mcp__").removesuffix("__*")
+        elif "__" not in tool_name.removeprefix("mcp__"):
+            server_token = tool_name.removeprefix("mcp__")
+
+        if not server_token:
+            return False
+
+        mcp_manager.load_config()
+        for server_name, conf in getattr(mcp_manager, "servers", {}).items():
+            if not isinstance(conf, dict):
+                continue
+            safe_server = mcp_manager._safe_identifier(server_name)
+            if safe_server == server_token:
+                return True
+
+        prefix = f"mcp__{server_token}__"
+        return any(
+            name.startswith(prefix) for name in getattr(self, "mcp_tool_names", set())
+        )
+
     async def load_mcp_tools(self) -> int:
         """
         从 mcp_servers.toml 发现 MCP 工具，并合并进 custom_tools。

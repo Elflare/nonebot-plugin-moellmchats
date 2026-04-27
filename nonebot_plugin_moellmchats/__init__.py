@@ -331,6 +331,19 @@ async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     await set_use_tools_matcher.finish(result)
 
 
+async def _reload_tools_for_commands() -> tuple[int, int]:
+    tool_manager.refresh_plugins()
+    error_count = tool_manager.load_custom_tools()
+
+    load_mcp_tools = getattr(tool_manager, "load_mcp_tools", None)
+    if not callable(load_mcp_tools):
+        logger.warning("当前 ToolManager 缺少 load_mcp_tools 方法，已跳过 MCP 工具刷新")
+        return error_count, 0
+
+    mcp_count = await load_mcp_tools()
+    return error_count, mcp_count
+
+
 manage_blacklist_matcher = on_command(
     "添加插件黑名单",
     aliases={"移除插件黑名单"},
@@ -349,11 +362,24 @@ async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     command_name = event.message.extract_plain_text().split()[0].strip()
     action = "add" if "添加" in command_name else "remove"
 
+    if action == "add":
+        if plugin_name in model_selector.get_tool_blacklist():
+            await manage_blacklist_matcher.finish("该插件已在黑名单中")
+
+        await _reload_tools_for_commands()
+        validate_tool_identifier = getattr(tool_manager, "validate_tool_identifier", None)
+        if not callable(validate_tool_identifier):
+            await manage_blacklist_matcher.finish(
+                "当前工具管理器不支持工具存在性校验，请重启 Bot 或更新插件后重试。"
+            )
+
+        exists, validate_msg = validate_tool_identifier(plugin_name)
+        if not exists:
+            await manage_blacklist_matcher.finish(validate_msg)
+
     result = model_selector.manage_tool_blacklist(action, plugin_name)
 
-    tool_manager.refresh_plugins()
-    tool_manager.load_custom_tools()
-    await tool_manager.load_mcp_tools()
+    await _reload_tools_for_commands()
 
     await manage_blacklist_matcher.finish(result)
 
@@ -393,9 +419,7 @@ refresh_tools_matcher = on_command(
 
 @refresh_tools_matcher.handle()
 async def _():
-    tool_manager.refresh_plugins()
-    error_count = tool_manager.load_custom_tools()
-    mcp_count = await tool_manager.load_mcp_tools()
+    error_count, mcp_count = await _reload_tools_for_commands()
 
     custom_count = len(tool_manager.custom_tools) - mcp_count
 
@@ -432,9 +456,7 @@ async def _startup_tasks():
 
     # 工具加载可以同步完成，避免刚启动时插件目录为空
     try:
-        tool_manager.refresh_plugins()
-        tool_manager.load_custom_tools()
-        await tool_manager.load_mcp_tools()
+        await _reload_tools_for_commands()
     except Exception:
         logger.exception("启动时加载工具失败")
 

@@ -9,6 +9,7 @@
 - 新增 MCP 工具接入，可通过 `mcp_servers.toml` 配置 MCP Server，并在 `刷新工具` / `重载工具` / `刷新插件` 时自动加载。
 - `custom_plugin_info.json` 新增 `dependencies` 字段，可为 NoneBot 插件声明伴生工具，例如让“随机图”插件先调用 Danbooru tag 搜索 MCP。
 - 自定义函数和 MCP 工具支持返回图片结果，格式为 `{"text": "...", "images": [...]}`，图片会自动交给视觉模型处理。
+- 现在添加插件黑名单的时候会判断是否存在这个插件，不存在会提示
 
 ### Changed
 
