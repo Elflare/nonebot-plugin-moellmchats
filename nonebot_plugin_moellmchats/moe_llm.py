@@ -130,17 +130,40 @@ class MoeLlm:
             await self.bot.send(self.event, content)
         return content
 
-    def _extract_api_error_detail(self, error_text: str) -> str:
-        """从 API 错误响应中提取简短原因，解析失败时返回空字符串。"""
+    def _extract_api_error_info(self, error_text: str) -> dict[str, str]:
+        """从 API 错误响应中提取常见结构化字段，解析失败时返回空字典。"""
+        info = {"code": "", "message": "", "type": "", "param": ""}
+
+        def set_if_empty(key: str, value):
+            if info[key] or value is None:
+                return
+            if isinstance(value, (str, int, float)):
+                info[key] = str(value)
+
         try:
             err_json = json.loads(error_text)
-            if isinstance(err_json, dict):
-                if "error" in err_json and isinstance(err_json["error"], dict):
-                    return err_json["error"].get("message", "")
-                return err_json.get("message", "") or err_json.get("msg", "")
         except Exception:
-            pass
-        return ""
+            return {}
+
+        if not isinstance(err_json, dict):
+            return {}
+
+        candidates = []
+        if isinstance(err_json.get("error"), dict):
+            candidates.append(err_json["error"])
+        candidates.append(err_json)
+
+        for candidate in candidates:
+            set_if_empty("code", candidate.get("code") or candidate.get("error_code"))
+            set_if_empty("message", candidate.get("message") or candidate.get("msg"))
+            set_if_empty("type", candidate.get("type"))
+            set_if_empty("param", candidate.get("param"))
+
+        return {key: value for key, value in info.items() if value}
+
+    def _extract_api_error_detail(self, error_text: str) -> str:
+        """从 API 错误响应中提取简短原因，解析失败时返回空字符串。"""
+        return self._extract_api_error_info(error_text).get("message", "")
 
     async def _check_400_error(self, response, request_data=None) -> str:
         """检查是否为400错误及敏感内容拦截，返回错误提示或None"""
@@ -148,7 +171,8 @@ class MoeLlm:
             error_content = await response.text()
             logger.warning(f"API请求400错误: {error_content}")
             # 1. 尝试解析 API 返回的具体报错信息
-            detail_msg = self._extract_api_error_detail(error_content)
+            error_info = self._extract_api_error_info(error_content)
+            detail_msg = error_info.get("message", "")
             # 2. 敏感词拦截逻辑保持不变
             sensitive_keywords = [
                 "DataInspectionFailed",  # 阿里
@@ -176,6 +200,12 @@ class MoeLlm:
 
             # 4. 组装更详细的聊天回复文本
             error_reply = "API请求被拒绝 (400)"
+            if code := error_info.get("code"):
+                error_reply += f"\n错误码：{code}"
+            if error_type := error_info.get("type"):
+                error_reply += f"\n类型：{error_type}"
+            if param := error_info.get("param"):
+                error_reply += f"\n参数：{param}"
             if detail_msg:
                 # 截取前150个字符，防止大段长英文代码刷屏，影响群聊体验
                 truncated_msg = (
