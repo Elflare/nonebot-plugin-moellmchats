@@ -165,6 +165,15 @@ class MoeLlm:
         """从 API 错误响应中提取简短原因，解析失败时返回空字符串。"""
         return self._extract_api_error_info(error_text).get("message", "")
 
+    def _payload_contains_image(self, value) -> bool:
+        if isinstance(value, dict):
+            if value.get("type") == "image_url" or "image_url" in value:
+                return True
+            return any(self._payload_contains_image(v) for v in value.values())
+        if isinstance(value, list):
+            return any(self._payload_contains_image(item) for item in value)
+        return False
+
     async def _check_400_error(self, response, request_data=None) -> str:
         """检查是否为400错误及敏感内容拦截，返回错误提示或None"""
         if response.status == 400:
@@ -200,6 +209,8 @@ class MoeLlm:
 
             # 4. 组装更详细的聊天回复文本
             error_reply = "API请求被拒绝 (400)"
+            if request_data is not None and self._payload_contains_image(request_data):
+                error_reply += "\n提示：当前视觉模型可能不支持图片输入，请检查 vision_model 是否设置为真正的视觉模型。"
             if code := error_info.get("code"):
                 error_reply += f"\n错误码：{code}"
             if error_type := error_info.get("type"):
@@ -441,6 +452,7 @@ class MoeLlm:
     async def _prepare_model_info(self, plain: str):
         """预处理：获取模型信息、处理难度分类与视觉判断"""
         self.required_plugins = []
+        difficulty = "1"
         # 1. 绝对的客观事实：只要真实提取到了图片URL，就必定触发视觉处理，不再完全依赖大模型分类判断
         has_image = bool(self.messages_handler.current_images)
         if (
@@ -459,25 +471,21 @@ class MoeLlm:
                 )
                 self.required_plugins = required_plugins
                 has_image = has_image or vision_required
-                # 无论是否开启MoE，只要触发视觉且有图片，优先走视觉模型
-                if has_image:
-                    vision_model_key = model_selector.model_config.get("vision_model")
-                    if vision_model_key:
-                        self.model_info = model_selector.get_model("vision_model")
-                        logger.info(
-                            f"触发视觉任务，切换至视觉模型: {self.model_info['model']}"
-                        )
-                    else:
-                        logger.info(
-                            "触发视觉任务，但未配置 vision_model 字段，退回普通模型/MoE模型"
-                        )
-                        if model_selector.get_moe():
-                            self.model_info = model_selector.get_moe_current_model(
-                                difficulty
-                            )
-                # 纯文本任务，若开启了MoE，则分配对应难度的模型
-                elif model_selector.get_moe():
-                    self.model_info = model_selector.get_moe_current_model(difficulty)
+
+        # 视觉任务高于 MoE 与 selected_model：只要本轮有图片，就必须使用 vision_model。
+        if has_image:
+            if not model_selector.model_config.get("vision_model"):
+                return "检测到图片消息，但未配置视觉模型。请先使用「设置视觉模型 <模型名或编号>」配置一个支持图片输入的模型。"
+
+            self.model_info = model_selector.get_model("vision_model")
+            if not self.model_info:
+                return "检测到图片消息，但视觉模型不可用。请使用「查看模型」确认模型可用后，重新执行「设置视觉模型 <模型名或编号>」。"
+
+            logger.info(f"触发视觉任务，切换至视觉模型: {self.model_info['model']}")
+
+        # 纯文本任务，若开启了MoE，则分配对应难度的模型
+        elif model_selector.get_moe():
+            self.model_info = model_selector.get_moe_current_model(difficulty)
 
         # 兜底：既没触发视觉，也没开启MoE，或者啥都没开启（原逻辑），使用默认模型
         if not self.model_info:
@@ -520,9 +528,9 @@ class MoeLlm:
 
     def _build_payload(self, send_message_list: list) -> tuple[dict, bool]:
         """构建发给大模型的 payload 与工具 schema"""
-        if self.model_info.get("is_vision") and self.messages_handler.current_images:
+        if self.messages_handler.current_images:
             logger.info(
-                f"检测到多模态模型 {self.model_info['model']} 且存在图片，正在构建多模态请求..."
+                f"检测到图片且当前模型为 {self.model_info['model']}，正在构建多模态请求..."
             )
             current_msg = send_message_list[-1]
             vision_content = [{"type": "text", "text": current_msg["content"]}]
@@ -1015,6 +1023,8 @@ class MoeLlm:
                         )
                     else:
                         logger.warning("插件返回了图片，但未配置视觉模型，无法自动切换")
+                        self._pending_vision_images = []
+                        return "插件返回了图片，但未配置视觉模型。请先使用「设置视觉模型 <模型名或编号>」配置一个支持图片输入的模型。"
                     self._pending_vision_images = []
 
                 data["messages"] = send_message_list

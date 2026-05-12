@@ -143,8 +143,7 @@ api_key = ["sk-key1", "sk-key2", "sk-key3"]  # 随机轮询
     "1": "deepseek-chat",     // 中等问题对应的模型
     "2": "deepseek-reasoner"  // 复杂问题对应的模型
   },
-  "vision_model": "gpt-4o",  // 视觉任务专用模型（分类器判定需要看图时强制使用）
-                               // 若未配置则回退到普通模型
+  "vision_model": "gpt-4o",  // 视觉任务专用模型（有图片时强制使用；未配置则提示用户设置）
   "selected_model": "deepseek-reasoner", // 不启用 MoE 时使用的模型（难度分级失败时也回滚至此）
   "category_model": "glm-4-flash",       // 分类模型（建议用免费或小型模型）
   "use_web_search": false,    // 是否启用网络搜索（需 use_moe 为 true 才生效）
@@ -208,7 +207,6 @@ api_key = ["sk-key1", "sk-key2", "sk-key3"]  # 随机轮询
     "key": "Bearer sk-xxx",
     "model": "gpt-4o",
     "proxy": "http://127.0.0.1:7890",
-    "is_vision": true,        // 开启多模态识图能力
     "stream": true
   }
 }

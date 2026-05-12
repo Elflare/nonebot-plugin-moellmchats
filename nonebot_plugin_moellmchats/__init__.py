@@ -154,7 +154,7 @@ async def _(event: MessageEvent):
     msg = (
         "✨ 当前大模型运行配置 ✨\n"
         f"▪ 基础聊天模型: {cfg.get('selected_model')}\n"
-        f"▪ 视觉专用模型: {cfg.get('vision_model') or '未设置 (默认走基础模型)'}\n"
+        f"▪ 视觉专用模型: {cfg.get('vision_model') or '未设置 (图片任务需先设置)'}\n"
         f"▪ 意图分类模型: {cfg.get('category_model')}\n"
         f"▪ 启用MoE调度: {'✅开启' if cfg.get('use_moe') else '❌关闭'}\n"
         f"  - 难度0: {cfg.get('moe_models', {}).get('0')}\n"
