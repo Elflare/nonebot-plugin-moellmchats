@@ -210,7 +210,7 @@ class MoeLlm:
             # 4. 组装更详细的聊天回复文本
             error_reply = "API请求被拒绝 (400)"
             if request_data is not None and self._payload_contains_image(request_data):
-                error_reply += "\n提示：当前视觉模型可能不支持图片输入，请检查 vision_model 是否设置为真正的视觉模型。"
+                error_reply += "\n提示：本次请求包含图片，具体原因请参考下方错误信息或后台日志。"
             if code := error_info.get("code"):
                 error_reply += f"\n错误码：{code}"
             if error_type := error_info.get("type"):
