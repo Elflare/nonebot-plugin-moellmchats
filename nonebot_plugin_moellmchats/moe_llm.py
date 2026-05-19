@@ -46,6 +46,7 @@ class MoeLlm:
         self.prompt = temperament_manager.get_temperament_prompt(temperament)
         self.dynamic_context = ""
         self._pending_vision_images: list = []  # 本轮工具调用返回的待处理图片
+        self._last_api_error_non_retryable = False
 
     async def _validate_runtime_model_config(self) -> str | None:
         is_valid, warnings = model_selector.validate_model_config(persist=True)
@@ -174,7 +175,7 @@ class MoeLlm:
             return any(self._payload_contains_image(item) for item in value)
         return False
 
-    async def _check_400_error(self, response, request_data=None) -> str:
+    async def _check_400_error(self, response, request_data=None) -> str | None:
         """检查是否为400错误及敏感内容拦截，返回错误提示或None"""
         if response.status == 400:
             error_content = await response.text()
@@ -247,7 +248,8 @@ class MoeLlm:
             url, headers=headers, json=data, proxy=proxy, timeout=timeout
         ) as resp:
             if error_msg := await self._check_400_error(resp, request_data=data):
-                return False, error_msg, None
+                self._last_api_error_non_retryable = True
+                return False, error_msg, None, ""
             # 确保响应是成功的
             if resp.status == 200:
                 # 异步迭代响应内容
@@ -410,6 +412,7 @@ class MoeLlm:
             url=url, json=data, headers=headers, proxy=proxy, timeout=timeout
         ) as resp:
             if error_msg := await self._check_400_error(resp, request_data=data):
+                self._last_api_error_non_retryable = True
                 return False, error_msg, None, ""
             if resp.status != 200:
                 error_text = await resp.text()
@@ -935,6 +938,7 @@ class MoeLlm:
 
             # 网络请求重试逻辑
             for retry_times in range(max_retry_times):
+                self._last_api_error_non_retryable = False
                 if retry_times > 0:
                     await self.bot.send(
                         self.event,
@@ -972,6 +976,8 @@ class MoeLlm:
                             llm_timeout,
                         )
                     if success:
+                        break
+                    if self._last_api_error_non_retryable:
                         break
                 except TimeoutError:
                     result_text = "网络超时呐，多半是api反应太慢（"
