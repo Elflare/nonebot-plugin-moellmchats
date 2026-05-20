@@ -1,23 +1,25 @@
-import ujson as json
-import re
-import aiohttp
 import asyncio
-import traceback
 from asyncio import TimeoutError
-from nonebot.log import logger
 from collections import defaultdict, deque
-from .categorize import Categorize
-from .search import Search
-from .model_selector import model_selector
-from .messages_handler import MessagesHandler
-from .config import config_parser
-from .temperament_manager import temperament_manager
-from .utils import get_emotions_names, get_emotion, parse_emotion, get_session
-import random
-from .tool_manager import tool_manager
-from .event_simulator import event_simulator
-import inspect
 import datetime
+import inspect
+import random
+import re
+import traceback
+
+import aiohttp
+from nonebot.log import logger
+import ujson as json
+
+from .categorize import Categorize
+from .config import config_parser
+from .event_simulator import event_simulator
+from .messages_handler import MessagesHandler
+from .model_selector import model_selector
+from .search import Search
+from .temperament_manager import temperament_manager
+from .tool_manager import tool_manager
+from .utils import get_emotion, get_emotions_names, get_session, parse_emotion
 
 context_dict = defaultdict(
     lambda: deque(maxlen=config_parser.get_config("max_group_history"))
@@ -68,7 +70,10 @@ class MoeLlm:
                 "emotions_enabled"
             ) and random.random() < config_parser.get_config("emotion_rate"):
                 self.emotion_flag = True
-                emotion_prompt = f"回复时根据回答内容，发送表情包，每次回复最多发一个表情包，格式为中括号+表情包名字，如：[表情包名字]。可选表情有{get_emotions_names()}"
+                emotion_prompt = (
+                    "回复时根据回答内容，发送表情包，每次回复最多发一个表情包，格式为中括号+表情包名字，"
+                    f"如：[表情包名字]。可选表情有{get_emotions_names()}"
+                )
 
             if hasattr(self.event, "group_id"):
                 dynamic_context_parts.append(f"Environment: QQ Group.{emotion_prompt}")
@@ -138,7 +143,7 @@ class MoeLlm:
         def set_if_empty(key: str, value):
             if info[key] or value is None:
                 return
-            if isinstance(value, (str, int, float)):
+            if isinstance(value, (str, int, float)):  # noqa: UP038
                 info[key] = str(value)
 
         try:
@@ -482,7 +487,10 @@ class MoeLlm:
 
             self.model_info = model_selector.get_model("vision_model")
             if not self.model_info:
-                return "检测到图片消息，但视觉模型不可用。请使用「查看模型」确认模型可用后，重新执行「设置视觉模型 <模型名或编号>」。"
+                return (
+                    "检测到图片消息，但视觉模型不可用。请使用「查看模型」确认模型可用后，"
+                    "重新执行「设置视觉模型 <模型名或编号>」。"
+                )
 
             logger.info(f"触发视觉任务，切换至视觉模型: {self.model_info['model']}")
 
@@ -598,9 +606,12 @@ class MoeLlm:
             mention_hint = self._build_tool_mention_hint()
 
             send_message_list[0]["content"] += (
-                "。特别注意：1. 同步执行：如果你需要调用工具，必须在本次回复的文本(content)中用简短的一句话说明你要做什么，并**在同一次回复中立刻发起工具调用(tool_calls)**！"
-                "2. 如果用户的请求包含多个步骤逻辑，你必须在获取到前置工具的结果后，**自动且连续地调用下一个工具**，直至彻底完成要求。"
-                "3. 工具执行结束后，原始数据将被清理。因此你最终呈现给用户的回复content中，**必须完整包含查询到的核心数据和关键结论**，这将作为你下一轮对话的记忆依据！"
+                "。特别注意：1. 同步执行：如果你需要调用工具，必须在本次回复的文本(content)中用简短的一句话"
+                "说明你要做什么，并**在同一次回复中立刻发起工具调用(tool_calls)**！"
+                "2. 如果用户的请求包含多个步骤逻辑，你必须在获取到前置工具的结果后，"
+                "**自动且连续地调用下一个工具**，直至彻底完成要求。"
+                "3. 工具执行结束后，原始数据将被清理。因此你最终呈现给用户的回复content中，"
+                "**必须完整包含查询到的核心数据和关键结论**，这将作为你下一轮对话的记忆依据！"
             )
 
             if mention_hint:
@@ -812,7 +823,7 @@ class MoeLlm:
                         tool_result = str(res)
                 except Exception as e:
                     logger.error(traceback.format_exc())
-                    tool_result = f"函数执行出错: {str(e)}"
+                    tool_result = f"函数执行出错: {e!s}"
             else:
                 if text_to_send:
                     await self.send_emotion_message(text_to_send)
@@ -826,7 +837,11 @@ class MoeLlm:
                     command,
                     self.format_message_dict,
                 )
-                _PLUGIN_SYSTEM_HINT = "\n\n[系统提示]：上述结果已对用户可见。注意：若执行不正确或者用户的原始请求需要多个步骤，请务重试或者继续调用下一个工具！如果所有任务均已完成，请直接做一两句话的简短总结，严禁重复上述已发送的结果。"
+                _PLUGIN_SYSTEM_HINT = (
+                    "\n\n[系统提示]：上述结果已对用户可见。注意：若执行不正确或者用户的原始请求需要多个步骤，"
+                    "请务重试或者继续调用下一个工具！如果所有任务均已完成，请直接做一两句话的简短总结，"
+                    "严禁重复上述已发送的结果。"
+                )
                 if plugin_images:
                     self._pending_vision_images.extend(plugin_images)
                     text_part = (
@@ -880,6 +895,72 @@ class MoeLlm:
         self.messages_handler.messages_entity.tool_messages.extend(history_msgs)
         return send_message_list
 
+    def _build_tool_limit_summary_prompt(self) -> str:
+        return (
+            "系统提示：工具自动调用轮次已达当前上限。请根据前序步骤收集到的工具结果，"
+            "给出初步结论或阶段性总结。不要继续调用工具；如果任务未彻底完成，请直接在回复末尾主动询问用户是否需要继续执行。"
+        )
+
+    def _build_empty_tool_summary_fallback(self) -> str:
+        tool_messages = self.messages_handler.messages_entity.tool_messages
+        last_tool_result = next(
+            (
+                message.get("content", "")
+                for message in reversed(tool_messages)
+                if message.get("role") == "tool"
+            ),
+            "",
+        )
+        if last_tool_result:
+            summary = last_tool_result[:200]
+            suffix = "..." if len(last_tool_result) > 200 else ""
+            return f"工具已经执行完毕，但模型没有返回总结。最后一次工具结果摘要：{summary}{suffix}"
+        return "工具已经执行完毕，但模型没有返回总结。"
+
+    async def _request_tool_summary_retry(
+        self,
+        session,
+        headers: dict,
+        send_message_list: list,
+        timeout,
+    ) -> str:
+        retry_messages = list(send_message_list)
+        retry_messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "系统提示：上一轮工具执行后你没有给出可见总结。请只基于已有工具结果，"
+                    "用简短中文回复用户当前结论；不要继续调用工具。"
+                ),
+            }
+        )
+        retry_data = {
+            "model": self.model_info["model"],
+            "messages": retry_messages,
+            "stream": False,
+        }
+        for key in ["max_tokens", "temperature", "top_p", "top_k"]:
+            if self.model_info.get(key) is not None:
+                retry_data[key] = self.model_info[key]
+        if extra_payload := self.model_info.get("extra_payload"):
+            if isinstance(extra_payload, dict):
+                retry_data.update(extra_payload)
+
+        success, summary_text, retry_tool_calls, _ = await self.none_stream_llm_chat(
+            session,
+            self.model_info["url"],
+            headers,
+            retry_data,
+            self.model_info.get("proxy"),
+            timeout,
+        )
+        if not success:
+            return ""
+        if retry_tool_calls:
+            logger.warning("工具总结补救请求仍返回了 tool_calls，已忽略并使用兜底总结")
+            return ""
+        return (summary_text or "").strip()
+
     async def get_llm_chat(self) -> str:
         self.messages_handler = MessagesHandler(self.user_id)
         plain = self.messages_handler.pre_process(self.format_message_dict)
@@ -932,7 +1013,7 @@ class MoeLlm:
                 send_message_list.append(
                     {
                         "role": "user",
-                        "content": "系统提示：工具自动调用次数已达当前轮次上限。请根据前序步骤收集到的隐藏记录信息，得出初步结论或阶段性总结。如果任务未彻底完成，请直接在回复末尾主动询问用户是否需要继续执行。",
+                        "content": self._build_tool_limit_summary_prompt(),
                     }
                 )
 
@@ -1030,14 +1111,38 @@ class MoeLlm:
                     else:
                         logger.warning("插件返回了图片，但未配置视觉模型，无法自动切换")
                         self._pending_vision_images = []
-                        return "插件返回了图片，但未配置视觉模型。请先使用「设置视觉模型 <模型名或编号>」配置一个支持图片输入的模型。"
+                        return (
+                            "插件返回了图片，但未配置视觉模型。请先使用「设置视觉模型 <模型名或编号>」"
+                            "配置一个支持图片输入的模型。"
+                        )
                     self._pending_vision_images = []
 
                 data["messages"] = send_message_list
                 continue
 
             # ===== 循环结束分支（无工具调用或已达到总结轮次） =====
-            if not current_stream_flag and result_text:
+            if tool_calls and tool_round >= max_tool_rounds:
+                logger.warning("工具轮次已达上限，但模型仍返回了 tool_calls，已停止执行并进入总结兜底")
+                result_text = ""
+
+            result_text_sent = False
+            has_tool_messages = bool(self.messages_handler.messages_entity.tool_messages)
+            if has_tool_messages and not (result_text or "").strip():
+                result_text = await self._request_tool_summary_retry(
+                    session,
+                    headers,
+                    send_message_list,
+                    llm_timeout,
+                )
+                if result_text:
+                    await self.send_emotion_message(result_text)
+                    result_text_sent = True
+                else:
+                    result_text = self._build_empty_tool_summary_fallback()
+                    await self.send_emotion_message(result_text)
+                    result_text_sent = True
+
+            if not result_text_sent and not current_stream_flag and result_text:
                 result_text = await self.send_emotion_message(result_text)
 
             # 统一并完整保存上下文，用户说"继续"时大模型能够回想起历史工具调用记录

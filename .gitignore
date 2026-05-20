@@ -178,3 +178,6 @@ pyrightconfig.json
 # claude
 CLAUDE.md
 .claude/
+
+# serena
+.serena/

@@ -34,7 +34,7 @@
   "max_group_history": 10,        // 群组上下文最大保留条数
   "max_user_history": 8,          // 每个用户上下文最大保留条数
   "max_retry_times": 3,           // LLM 请求失败时的最大重试次数
-  "max_tool_rounds": 3,           // 单轮对话中最大工具调用轮次
+  "max_tool_rounds": 3,           // 单轮对话中最大工具交互轮次（一次多个 tool_calls 仍算 1 轮）
   "user_history_expire_seconds": 600, // 用户上下文 TTL 过期时间（秒）
   "cd_seconds": 0,                // 每个用户的对话冷却时间（秒）
   "search_api": "Bearer your_tavily_key", // 联网搜索 Tavily API Key（开启搜索必填）
