@@ -6,6 +6,7 @@
 
 ### Changed
 
+- 重构`moe_llm.py`，拆分为多个文件
 - 移除视觉模型的 `is_vision` 开关依赖：有图片时强制使用 `vision_model`，未配置则提示用户先设置视觉模型。
 - 优化 API 400 错误提示：现在会尽量透出厂商返回的 `code`、`type`、`param` 和 `message`，方便直接定位请求失败原因。
 
