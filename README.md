@@ -200,5 +200,6 @@ flowchart TD
 - [Nonebot](https://nonebot.dev/) 项目所发布的高品质机器人框架
 - [nonebot-plugin-template](https://github.com/A-kirami/nonebot-plugin-template) 所发布的插件模板
 - [nonebot-plugin-llmchat](https://github.com/FuQuan233/nonebot-plugin-llmchat) 部分参考
+- [nonebot-plugin-kawaii-robot](https://github.com/lgc-NB2Dev/nonebot-plugin-kawaii-robot) 参考戳一戳回应消息
 - [deepseek-r1](https://deepseek.com/) 我和共同创作README
 - 以及所有LLM开发者
