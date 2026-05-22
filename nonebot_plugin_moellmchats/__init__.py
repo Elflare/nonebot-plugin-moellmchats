@@ -1,37 +1,47 @@
-from nonebot.plugin.on import on_message, on_notice, on_command, on_fullmatch
-from nonebot.plugin import PluginMetadata, require
-from nonebot.rule import to_me
-from nonebot.permission import SUPERUSER
-from nonebot.params import CommandArg
 import asyncio
+import random
+
+from nonebot import get_driver
 from nonebot.adapters.onebot.v11 import (
+    Bot,
     GROUP,
+    GroupMessageEvent,
     Message,
     MessageEvent,
-    GroupMessageEvent,
     PokeNotifyEvent,
-    PrivateMessageEvent,
-    Bot,
 )
-import random
-from nonebot import get_driver
 from nonebot.log import logger
+from nonebot.params import CommandArg
+from nonebot.permission import SUPERUSER
+from nonebot.plugin import PluginMetadata, require
+from nonebot.plugin.on import on_command, on_fullmatch, on_message, on_notice
+from nonebot.rule import to_me
+
 require("nonebot_plugin_localstore")
-from .utils import (
-    get_reply_messages,
-    format_message,
-    init_session,
-    close_session,
-)
-from collections import defaultdict
 
 from . import moe_llm as llm
-from .model_selector import model_selector
-from .temperament_manager import temperament_manager
+from .chat_runtime import (
+    chat_rule,
+    handle_llm,
+    reset_all_runtime_state,
+    reset_user_runtime_state,
+)
 from .config import config_parser
-from .tool_manager import tool_manager
 from .messages_handler import messages_dict
+from .model_selector import model_selector
 from .moe_llm import token_usage_history
+from .request_manager import cancel_request_by_arg, format_active_requests
+from .temperament_manager import temperament_manager
+from .token_usage_formatter import format_token_usage_history
+from .tool_manager import tool_manager
+from .tool_runtime import reload_tools_for_commands
+from .utils import (
+    close_session,
+    format_message,
+    get_reply_messages,
+    init_session,
+)
+
 
 __plugin_meta__ = PluginMetadata(
     name="MoEllm聊天",
@@ -47,15 +57,14 @@ __plugin_meta__ = PluginMetadata(
 9.对bot发送"重置我的/重置对话/清空上下文"来清空自己的上下文对话记忆
 10.超级管理员限定：对bot发送"重置全部对话"来清空所有用户的上下文及群组环境记忆
 11.超级管理员限定：用"添加常驻插件/移除常驻插件"、"查看常驻插件"来管理无视分类模型强制注入的工具
-12.超级管理员限定：用"查看消耗 [数量或范围]"来查询API Token消耗记录（如：查看消耗 5、查看消耗 10-15、查看消耗 -50）
+12.超级管理员限定：用"查看请求"、"停止请求 [编号|all]"来查看或终止当前正在处理的 LLM 请求
+13.超级管理员限定：用"查看消耗 [数量或范围]"来查询API Token消耗记录（如：查看消耗 5、查看消耗 10-15、查看消耗 -50）
 """,
     type="application",
     homepage="https://github.com/Elflare/nonebot-plugin-moellmchats",
     supported_adapters={"~onebot.v11"},
 )
 
-cd = defaultdict(int)
-is_repeat_ask_dict = defaultdict(bool)  # 记录是否重复提问
 
 message_matcher = on_message(permission=GROUP, priority=1, block=False)
 
@@ -80,17 +89,6 @@ async def context_dict_func(bot: Bot, event: MessageEvent):
         # bot, event, message_dict,is_objective=True, temperament='默认')
         #     reply = await llm.handle_llm()
 
-
-async def chat_rule(bot: Bot, event: MessageEvent) -> bool:
-    if isinstance(event, GroupMessageEvent):
-        return True
-    if isinstance(event, PrivateMessageEvent):
-        # 严格判断：开关打开 且 为超级管理员
-        return bool(
-            config_parser.get_config("private_chat_enabled")
-            and str(event.user_id) in bot.config.superusers
-        )
-    return False
 
 
 # 性格切换
@@ -239,40 +237,6 @@ async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     await vision_model_matcher.finish(result)
 
 
-async def handle_llm(
-    bot: Bot, event: MessageEvent, matcher, format_message_dict: dict, is_ai=False
-):
-    # 获取消息文本
-    user_id = event.sender.user_id
-    if event.time - cd[user_id] < config_parser.get_config("cd_seconds"):
-        sender_name = getattr(event.sender, "card", None) or event.sender.nickname
-        if is_repeat_ask_dict[user_id]:
-            await matcher.finish(
-                f"{sender_name}的llm对话cd中, 将会在{config_parser.get_config('cd_seconds') - (event.time-cd[user_id])}秒后自动回答，请不要重复提问~"
-            )
-        await matcher.send(
-            f"{sender_name}的llm对话cd中, 将会在{config_parser.get_config('cd_seconds') - (event.time-cd[user_id])}秒后自动回答，请不要重复提问~"
-        )
-        is_repeat_ask_dict[user_id] = True
-        await asyncio.sleep(
-            max(0, config_parser.get_config("cd_seconds") - (event.time - cd[user_id]))
-        )
-    cd[user_id] = event.time
-    if is_ai:
-        temp = "ai助手"
-    else:
-        temp = temperament_manager.get_temperament(user_id)
-        if not temp:
-            await matcher.finish("出错了，赶快喊机器人主人来修复一下吧~")
-    llm_chat = llm.MoeLlm(bot, event, format_message_dict, temperament=temp)
-    is_finished = await llm_chat.get_llm_chat()
-    is_repeat_ask_dict[user_id] = False  # 重复提问判定就不用了
-    if isinstance(is_finished, str):  # 表示失败，失败描述文字
-        cd[user_id] = 0
-        await matcher.finish(is_finished)
-    elif not is_finished:  # 失败后cd回0
-        cd[user_id] = 0
-
 
 llm_matcher = on_message(
     rule=to_me() & chat_rule,
@@ -331,19 +295,6 @@ async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     await set_use_tools_matcher.finish(result)
 
 
-async def _reload_tools_for_commands() -> tuple[int, int]:
-    tool_manager.refresh_plugins()
-    error_count = tool_manager.load_custom_tools()
-
-    load_mcp_tools = getattr(tool_manager, "load_mcp_tools", None)
-    if not callable(load_mcp_tools):
-        logger.warning("当前 ToolManager 缺少 load_mcp_tools 方法，已跳过 MCP 工具刷新")
-        return error_count, 0
-
-    mcp_count = await load_mcp_tools()
-    return error_count, mcp_count
-
-
 manage_blacklist_matcher = on_command(
     "添加插件黑名单",
     aliases={"移除插件黑名单"},
@@ -366,7 +317,7 @@ async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
         if plugin_name in model_selector.get_tool_blacklist():
             await manage_blacklist_matcher.finish("该插件已在黑名单中")
 
-        await _reload_tools_for_commands()
+        await reload_tools_for_commands()
         validate_tool_identifier = getattr(tool_manager, "validate_tool_identifier", None)
         if not callable(validate_tool_identifier):
             await manage_blacklist_matcher.finish(
@@ -379,7 +330,7 @@ async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
 
     result = model_selector.manage_tool_blacklist(action, plugin_name)
 
-    await _reload_tools_for_commands()
+    await reload_tools_for_commands()
 
     await manage_blacklist_matcher.finish(result)
 
@@ -419,7 +370,7 @@ refresh_tools_matcher = on_command(
 
 @refresh_tools_matcher.handle()
 async def _():
-    error_count, mcp_count = await _reload_tools_for_commands()
+    error_count, mcp_count = await reload_tools_for_commands()
 
     custom_count = len(tool_manager.custom_tools) - mcp_count
 
@@ -456,7 +407,7 @@ async def _startup_tasks():
 
     # 工具加载可以同步完成，避免刚启动时插件目录为空
     try:
-        await _reload_tools_for_commands()
+        await reload_tools_for_commands()
     except Exception:
         logger.exception("启动时加载工具失败")
 
@@ -536,8 +487,7 @@ async def _(event: MessageEvent):
         messages_dict[user_id].clear()  # 清空个人记忆
 
     # 清理该用户的调用CD和状态
-    cd[user_id] = 0
-    is_repeat_ask_dict[user_id] = False
+    reset_user_runtime_state(user_id)
 
     await reset_mine_matcher.finish("已清空你的专属上下文对话记忆~")
 
@@ -556,8 +506,7 @@ reset_all_matcher = on_fullmatch(
 async def _():
     messages_dict.clear()  # 清空所有人的个人记忆
     llm.context_dict.clear()  # 清空所有群聊的群聊环境记忆
-    cd.clear()
-    is_repeat_ask_dict.clear()
+    reset_all_runtime_state()
 
     await reset_all_matcher.finish("已清空所有用户的上下文及群聊环境记忆！")
 
@@ -609,6 +558,35 @@ async def _(event: MessageEvent):
     await check_resident_matcher.finish("\n".join(lines))
 
 
+check_request_matcher = on_command(
+    "查看请求",
+    aliases={"查看当前请求", "当前请求", "查看正在请求"},
+    permission=SUPERUSER,
+    priority=10,
+    block=True,
+)
+
+
+@check_request_matcher.handle()
+async def _():
+    await check_request_matcher.finish(format_active_requests())
+
+
+stop_request_matcher = on_command(
+    "停止请求",
+    aliases={"终止请求", "取消请求", "stop请求"},
+    permission=SUPERUSER,
+    priority=10,
+    block=True,
+)
+
+
+@stop_request_matcher.handle()
+async def _(args: Message = CommandArg()):
+    arg = args.extract_plain_text().strip()
+    await stop_request_matcher.finish(cancel_request_by_arg(arg))
+
+
 # --- 查询 Token 消耗的指令 ---
 check_token_matcher = on_command(
     "查看消耗",
@@ -622,85 +600,9 @@ check_token_matcher = on_command(
 @check_token_matcher.handle()
 async def _(event: MessageEvent, args: Message = CommandArg()):
     arg = args.extract_plain_text().strip()
-    if not token_usage_history:
-        await check_token_matcher.finish("当前暂无 Token 消耗记录。")
-    history_list = list(token_usage_history)
-    total_records = len(history_list)
-
-    # 默认查询参数
-    start_idx = 0
-    end_idx = min(5, total_records)
-
-    if arg:
-        if arg.startswith("-") and arg[1:].isdigit():
-            # 逻辑 1：处理 "-N"（最远的 N 条记录）
-            n = int(arg[1:])
-            if n <= 0:
-                await check_token_matcher.finish(
-                    "范围错误，负数后面需要跟大于 0 的数字哦。"
-                )
-            n = min(n, total_records)
-            start_idx = total_records - n
-            end_idx = total_records
-
-        elif "-" in arg:
-            # 逻辑 2：处理 "X-Y" 范围
-            parts = arg.split("-")
-            if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
-                x, y = int(parts[0]), int(parts[1])
-                if x > y or x <= 0:
-                    await check_token_matcher.finish(
-                        "范围格式错误，请确保 X <= Y 且 X > 0，例如: 10-15"
-                    )
-                start_idx = x - 1
-                end_idx = min(y, total_records)
-            else:
-                await check_token_matcher.finish(
-                    "参数格式错误！支持的格式: 5、10-15、-10"
-                )
-
-        elif arg.isdigit():
-            # 逻辑 3：处理 "N"（最近的 N 条记录）
-            n = int(arg)
-            if n <= 0:
-                await check_token_matcher.finish("查询次数必须大于 0 哦~")
-            start_idx = 0
-            end_idx = min(n, total_records)
-
-        else:
-            await check_token_matcher.finish(
-                "无法识别的参数！支持的格式: 5、10-15、-10"
-            )
-
-    # 边界检查
-    if start_idx >= total_records:
-        await check_token_matcher.finish(
-            f"超出范围啦！当前总共只有 {total_records} 条记录哦。"
-        )
-
-    # 切片提取所需数据
-    display_list = history_list[start_idx:end_idx]
-
-    # 动态生成标题
-    if arg.startswith("-"):
-        title = f"📊 最远的 {len(display_list)} 次 API 调用消耗："
-    elif "-" in arg:
-        title = f"📊 第 {start_idx + 1} 到 {end_idx} 次 API 调用消耗："
-    else:
-        title = f"📊 最近 {len(display_list)} 次 API 调用消耗："
-
-    msg = title + "\n"
-
-    # enumerate 传入 start_idx + 1，保证序号和实际位置一致
-    for idx, record in enumerate(display_list, start_idx + 1):
-        msg += f"[{idx}] {record['time']} | {record['model']}\n"
-        msg += (
-            f" ├ 提示词: {record['prompt']} (其中命中缓存: {record.get('cache', 0)})\n"
-        )
-        msg += f" ├ 生成:   {record['completion']}\n"
-        msg += f" └ 总计:   {record['total']}\n"
-
-    await check_token_matcher.finish(msg.strip())
+    await check_token_matcher.finish(
+        format_token_usage_history(arg, token_usage_history)
+    )
 
 
 # 优先级10，不会向下阻断，条件：戳一戳bot触发

@@ -6,6 +6,7 @@ from nonebot.log import logger
 import ujson as json
 
 from .llm_state import token_usage_history
+from .request_manager import get_current_request_elapsed
 
 
 class LlmApiMixin:
@@ -18,6 +19,7 @@ class LlmApiMixin:
         cache_hit = prompt_tokens_details.get("cached_tokens", 0) or usage.get(
             "prompt_cache_hit_tokens", 0
         )
+        elapsed = get_current_request_elapsed()
         token_usage_history.appendleft(
             {
                 "time": datetime.datetime.now().strftime("%m-%d %H:%M:%S"),
@@ -26,6 +28,7 @@ class LlmApiMixin:
                 "cache": cache_hit,
                 "completion": completion_tokens,
                 "total": total_tokens,
+                "elapsed": elapsed,
             }
         )
 
