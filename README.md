@@ -34,6 +34,8 @@
 
 ## 📦 安装
 
+以下两种安装方式任选其一即可。
+
 ### 使用 nb-cli 安装
 
 在 nonebot2 项目的根目录下打开命令行，输入以下指令即可安装：
@@ -86,9 +88,9 @@ COMMAND_START=["/",""]   # 可选
 | `custom_plugin_info.json` | 手动 | 覆写NoneBot插件描述以提升LLM调用精准度 | 是 |
 | `custom_tools/` | 手动 | 原生Python函数，供LLM直接调用 | 否（`刷新工具`指令） |
 
-**[→ 完整配置参考（含所有字段说明与示例）请见 Wiki](docs/configuration.md)**
+**[→ 完整配置参考（含所有字段说明与示例）请见 docs 配置文档](docs/configuration.md)**
 
-其他Wiki页面：[自定义工具开发](docs/custom-tools.md) · [插件集成](docs/plugin-integration.md) · [性格系统](docs/personality.md)
+其他文档页面：[自定义工具开发](docs/custom-tools.md) · [插件集成](docs/plugin-integration.md) · [性格系统](docs/personality.md)
 
 ## 🎮 使用
 
