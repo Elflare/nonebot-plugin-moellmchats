@@ -1,3 +1,4 @@
+from collections import Counter
 import inspect
 import traceback
 
@@ -48,7 +49,11 @@ class LlmToolsMixin:
         text_to_send = result_text  # 暂存大模型回复文本，防止多个插件时被重复发送
         for call in tool_calls:
             func_name = call["function"]["name"]
+            if not hasattr(self, "_current_tool_usage"):
+                self._current_tool_usage = Counter()
+            self._current_tool_usage[func_name] += 1
             self.messages_handler.messages_entity.add_used_plugins({func_name})
+
             try:
                 args = json.loads(call["function"]["arguments"])
             except Exception:

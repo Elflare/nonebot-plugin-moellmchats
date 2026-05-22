@@ -1,3 +1,4 @@
+from collections import Counter
 from collections.abc import Iterable
 
 
@@ -11,7 +12,23 @@ def _format_elapsed(elapsed) -> str:
     return f" | 耗时 {elapsed:.1f}s"
 
 
+def _format_tools(tools) -> str:
+    if not tools:
+        return ""
+    if isinstance(tools, Counter):
+        tool_counts = tools
+    elif isinstance(tools, dict):
+        tool_counts = Counter(tools)
+    else:
+        tool_counts = Counter(tools)
+    tool_text = "，".join(
+        f"{name}×{count}" for name, count in tool_counts.items() if count
+    )
+    return f" | 工具: {tool_text}" if tool_text else ""
+
+
 def format_token_usage_history(arg: str, token_usage_history: Iterable[dict]) -> str:
+
     history_list = list(token_usage_history)
     if not history_list:
         return "当前暂无 Token 消耗记录。"
@@ -59,8 +76,12 @@ def format_token_usage_history(arg: str, token_usage_history: Iterable[dict]) ->
     lines = [title]
     for idx, record in enumerate(display_list, start_idx + 1):
         elapsed_text = _format_elapsed(record.get("elapsed"))
-        lines.append(f"[{idx}] {record['time']} | {record['model']}{elapsed_text}")
+        tools_text = _format_tools(record.get("tools"))
         lines.append(
+            f"[{idx}] {record['time']} | {record['model']}{elapsed_text}{tools_text}"
+        )
+        lines.append(
+
             f" ├ 提示词: {record['prompt']} (其中命中缓存: {record.get('cache', 0)})"
         )
         lines.append(f" ├ 生成:   {record['completion']}")

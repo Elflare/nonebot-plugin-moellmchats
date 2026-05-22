@@ -29,7 +29,9 @@ class LlmApiMixin:
                 "completion": completion_tokens,
                 "total": total_tokens,
                 "elapsed": elapsed,
+                "tools": dict(getattr(self, "_current_tool_usage", {})),
             }
+
         )
 
     def _extract_api_error_info(self, error_text: str) -> dict[str, str]:

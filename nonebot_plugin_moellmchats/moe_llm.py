@@ -1,5 +1,6 @@
 import asyncio
 from asyncio import TimeoutError
+from collections import Counter
 import datetime
 import random
 import traceback
@@ -41,9 +42,11 @@ class MoeLlm(LlmApiMixin, LlmPayloadMixin, LlmToolsMixin):
         self.prompt = temperament_manager.get_temperament_prompt(temperament)
         self.dynamic_context = ""
         self._pending_vision_images: list = []  # 本轮工具调用返回的待处理图片
+        self._current_tool_usage = Counter()
         self._last_api_error_non_retryable = False
 
     async def _validate_runtime_model_config(self) -> str | None:
+
         is_valid, warnings = model_selector.validate_model_config(persist=True)
         self._config_warnings = warnings
         if not is_valid:
