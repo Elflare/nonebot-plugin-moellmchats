@@ -32,7 +32,8 @@ class Categorize:
 - required_plugins: 字符串列表。根据下方插件目录，判断是否必须调用插件（可以多个）。
 【可用插件目录】：
 {catalog}
-注：不要自信：大模型没有时间观念，计算能力也有限。若有对应插件请提供。若没有，则保持[]。
+注：若有对应插件请提供。若没有，则保持[]。不确定时倾向于返回可能插件；宁可多给，不要漏给。
+
 【示例】：
 用户输入："今天北京天气怎么样？"
 输出：{{"difficulty": "0", "vision_required": false, "required_plugins": ["web_search"]}}
