@@ -46,14 +46,9 @@
 <summary>使用包管理器安装</summary>
 在 nonebot2 项目的插件目录下, 打开命令行, 根据你使用的包管理器, 输入相应的安装命令
 
-<details>
-<summary>pip</summary>
 
-    pip install nonebot-plugin-moellmchats
-
-</details>
 <details>
-<summary>uv</summary>
+<summary>建议使用 uv</summary>
 
     uv add nonebot-plugin-moellmchats
 
