@@ -81,6 +81,42 @@ class LlmToolsMixin:
                     func = tool_manager.custom_tools[func_name]["func"]
                     # 依赖注入核心逻辑
                     sig = inspect.signature(func)
+                    if not any(
+                        param.kind == inspect.Parameter.VAR_KEYWORD
+                        for param in sig.parameters.values()
+                    ):
+                        unexpected_args = [
+                            key for key in args
+                            if key not in sig.parameters
+                        ]
+                        if unexpected_args:
+                            available_args = [
+                                key for key, param in sig.parameters.items()
+                                if not key.startswith("_")
+                                and param.kind
+                                in (
+                                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                                    inspect.Parameter.KEYWORD_ONLY,
+                                )
+                            ]
+                            tool_result = (
+                                f"函数参数错误：{func_name} 不支持参数 "
+                                f"{', '.join(unexpected_args)}。"
+                                f"可用参数：{', '.join(available_args) or '无'}。"
+                                "请根据可用参数重新调用该工具。"
+                            )
+                            logger.warning(
+                                f"函数 {func_name} 收到未声明参数: {unexpected_args}，"
+                                f"可用参数: {available_args}"
+                            )
+                            send_message_list.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": call["id"],
+                                    "content": tool_result,
+                                }
+                            )
+                            continue
                     if "_tool_manager" in sig.parameters:
                         args["_tool_manager"] = tool_manager
                     # 注入 bot 和 event
