@@ -87,13 +87,14 @@ async def extract_webpage(
 
 ```python
 from typing import Annotated
+from nonebot.adapters.onebot.v11 import Bot, MessageEvent
 
 async def send_message_to_target(
     target_type: Annotated[str, "发送目标的类型，必须是 'user' (发给个人) 或 'group' (发给群聊)"],
     target_id: Annotated[int, "目标用户的QQ号，或者目标群的群号"],
     message: Annotated[str, "需要发送的具体消息内容"],
-    _bot: Any = None,
-    _event: Any = None,
+    _bot: Bot = None,
+    _event: MessageEvent = None,
 ) -> str:
     """
     让机器人跨窗口/跨群发送文本消息给指定的QQ号或QQ群。
