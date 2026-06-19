@@ -27,12 +27,21 @@ class LlmToolsMixin:
             ):
                 call["function"]["arguments"] = "{}"
 
+        max_tool_calls_per_round = 10
+        executable_tool_calls = tool_calls[:max_tool_calls_per_round]
+        skipped_tool_calls = tool_calls[max_tool_calls_per_round:]
+        if skipped_tool_calls:
+            logger.warning(
+                f"本轮工具调用数量为 {len(tool_calls)}，超过上限 "
+                f"{max_tool_calls_per_round}，将跳过超出的调用"
+            )
+
         content_for_history = str(result_text) if result_text else ""
         if self.emotion_flag and content_for_history:
             content_for_history, _ = parse_emotion(content_for_history)
         # 提取本次调用的所有工具名称
         called_func_names = [
-            call.get("function", {}).get("name", "未知插件") for call in tool_calls
+            call.get("function", {}).get("name", "未知插件") for call in executable_tool_calls
         ]
         func_names_str = ", ".join(called_func_names)
 
@@ -47,7 +56,7 @@ class LlmToolsMixin:
             assistant_msg["reasoning_content"] = reasoning_content
         send_message_list.append(assistant_msg)
         text_to_send = result_text  # 暂存大模型回复文本，防止多个插件时被重复发送
-        for call in tool_calls:
+        for call in executable_tool_calls:
             func_name = call["function"]["name"]
             if not hasattr(self, "_current_tool_usage"):
                 self._current_tool_usage = Counter()
@@ -208,6 +217,19 @@ class LlmToolsMixin:
                     "role": "tool",
                     "tool_call_id": call["id"],
                     "content": tool_result,
+                }
+            )
+
+        for call in skipped_tool_calls:
+            func_name = call.get("function", {}).get("name", "未知插件")
+            send_message_list.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": (
+                        f"本轮工具调用数量超过上限 {max_tool_calls_per_round}，"
+                        f"工具 {func_name} 已跳过。请在下一轮根据需要重新调用。"
+                    ),
                 }
             )
 
