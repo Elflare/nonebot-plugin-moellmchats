@@ -33,6 +33,7 @@ class ConfigParser:
                 "emotions_dir": "absolute path",
                 "private_chat_enabled": False,
                 "show_datetime": False,  # 是否在System Prompt中注入当前时间
+                "poke_llm_rate": 0.3,  # 被戳一戳时走LLM对话的概率（0~1，0为关闭）
             }
             with open(self.filepath, "w", encoding="utf-8") as file:
                 json.dump(config, file, indent=4, ensure_ascii=False)

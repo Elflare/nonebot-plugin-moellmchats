@@ -43,7 +43,8 @@
   "emotion_rate": 0.1,            // 触发表情包的概率（0~1）
   "emotions_dir": "/absolute/path/to/emotions", // 表情包根目录（绝对路径）
   "private_chat_enabled": false,  // 是否允许超级管理员私聊 Bot
-  "show_datetime": false          // 是否在 System Prompt 中注入当前时间
+  "show_datetime": false,         // 是否在 System Prompt 中注入当前时间
+  "poke_llm_rate": 0.3            // 被戳一戳时走LLM对话的概率（0~1，0为关闭；仅群聊生效，cd中或概率外则回随机默认文案）
 }
 ```
 

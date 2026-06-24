@@ -1,5 +1,6 @@
 import asyncio
 import random
+import time
 
 from nonebot import get_driver
 from nonebot.adapters.onebot.v11 import (
@@ -10,6 +11,7 @@ from nonebot.adapters.onebot.v11 import (
     MessageEvent,
     PokeNotifyEvent,
 )
+from nonebot.adapters.onebot.v11.event import Sender
 from nonebot.log import logger
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
@@ -21,6 +23,7 @@ require("nonebot_plugin_localstore")
 
 from . import moe_llm as llm
 from .chat_runtime import (
+    cd,
     chat_rule,
     handle_llm,
     reset_all_runtime_state,
@@ -610,8 +613,60 @@ poke_ = on_notice(rule=to_me(), priority=11, block=False)
 
 
 @poke_.handle()
-async def _poke_event(event: PokeNotifyEvent):
-    if event.is_tome:
+async def _poke_event(bot: Bot, event: PokeNotifyEvent):
+    if not event.is_tome:
+        return
+    # 概率走LLM对话（内容：(xx戳了一下你)），概率外保持默认随机回复
+    poke_llm_rate = config_parser.get_config("poke_llm_rate") or 0
+    group_id = getattr(event, "group_id", None)
+    if (
+        poke_llm_rate
+        and group_id
+        and random.random() < poke_llm_rate
+        # cd中直接走默认回复，避免触发handle_llm的排队等待逻辑
+        and event.time - cd.get(event.user_id, 0)
+        >= (config_parser.get_config("cd_seconds") or 0)
+    ):
+        # 获取戳一戳发起者的群名片/昵称
+        try:
+            member = await bot.get_group_member_info(
+                group_id=group_id, user_id=event.user_id, no_cache=False
+            )
+            sender_name = (
+                member.get("card") or member.get("nickname") or str(event.user_id)
+            )
+        except Exception:
+            sender_name = str(event.user_id)
+
+        # 构造伪群消息事件以复用LLM对话全流程（cd/队列/工具/上下文/性格）
+        fake_id = int(time.time_ns() % 10**15) + random.randint(1000, 9999)
+        fake_event = GroupMessageEvent(
+            time=event.time,
+            self_id=event.self_id,
+            post_type="message",
+            sub_type="normal",
+            user_id=event.user_id,
+            message_type="group",
+            group_id=group_id,
+            message_id=fake_id,
+            message=Message(),
+            original_message=Message(),
+            raw_message="",
+            font=0,
+            sender=Sender(
+                user_id=event.user_id, nickname=sender_name, card=sender_name
+            ),
+        )
+        format_message_dict = {
+            "text": [f"({sender_name}戳了一下你)"],
+            "images": [],
+            "mentions": [],
+            "reply": "",
+            "reply_user": None,
+            "current_user": {"qq": str(event.user_id), "name": sender_name},
+        }
+        await handle_llm(bot, fake_event, poke_, format_message_dict, is_ai=False)
+    else:
         await poke_.send(Message(random.choice(get_reply_messages("poke"))))
         # try:
         #     await poke_.send(Message(f"[CQ:group_poke,qq={event.user_id}]"))
